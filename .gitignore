@@ -1,0 +1,51 @@
+# PlatformIO build outputs
+.pio/
+.pioenvs/
+.piolibdeps/
+
+# IDE specific files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.env
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Build outputs
+*.o
+*.d
+*.bin
+*.elf
+*.map
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Test project build outputs (keep source files)
+buzzer_led_test/.pio/
+led_key_test/.pio/
+led_sequence_test/.pio/
+
+# Keep these
+!.codebuddy/
+!.codebuddy/**

@@ -1,0 +1,46 @@
+gpio,function,category,alias,usable,notes
+0,KEY_B,button,BOOT,yes,按键B-兼BOOT模式选择-上电时保持高电平
+1,GROVE3_PIN2,grove,Grove3-2,yes,Grove接口3第2脚
+2,GROVE3_PIN1,grove,Grove3-1,yes,Grove接口3第1脚
+3,GROVE6_PIN1,grove,Grove6-1,yes,Grove接口6第1脚
+4,GROVE6_PIN2,grove,Grove6-2,yes,Grove接口6第2脚
+5,GROVE1_PIN1,grove,Grove1-1,yes,Grove接口1第1脚
+6,GROVE1_PIN2,grove,Grove1-2,yes,Grove接口1第2脚
+7,GROVE4_PIN1,grove,Grove4-1,yes,Grove接口4第1脚
+8,GROVE4_PIN2,grove,Grove4-2,yes,Grove接口4第2脚
+9,PS2_CMD,ps2,PS2-CMD,yes,PS2手柄命令信号
+10,PS2_DATA,ps2,PS2-DATA,yes,PS2手柄数据信号
+11,MOTOR_M1_A,motor,M1-A,yes,电机M1正向-左前
+12,MOTOR_M1_B,motor,M1-B,yes,电机M1反向-左前
+13,MOTOR_M2_A,motor,M2-A,yes,电机M2正向-右前
+14,MOTOR_M2_B,motor,M2-B,yes,电机M2反向-右前
+15,MOTOR_M3_A,motor,M3-A,yes,电机M3正向-左后
+16,MOTOR_M3_B,motor,M3-B,yes,电机M3反向-左后
+17,MOTOR_M4_A,motor,M4-A,yes,电机M4正向-右后
+18,MOTOR_M4_B,motor,M4-B,yes,电机M4反向-右后
+19,USB_DN,system,USB-,no,USB2.0数据负-系统占用
+20,USB_DP,system,USB+,no,USB2.0数据正-系统占用
+21,KEY_A,button,KeyA,yes,按键A
+26,BUZZER,buzzer,BUZ1,yes,蜂鸣器
+27,FLASH,system,Flash,no,8MB Flash-系统占用
+28,FLASH,system,Flash,no,8MB Flash-系统占用
+29,FLASH,system,Flash,no,8MB Flash-系统占用
+30,FLASH,system,Flash,no,8MB Flash-系统占用
+31,FLASH,system,Flash,no,8MB Flash-系统占用
+32,FLASH,system,Flash,no,8MB Flash-系统占用
+33,LED_ROW1,led_matrix,LED-R1,yes,LED矩阵第1行(GPIO33)-物理下方
+34,LED_ROW2,led_matrix,LED-R2,yes,LED矩阵第2行(GPIO34)-物理中间
+35,LED_ROW3,led_matrix,LED-R3,yes,LED矩阵第3行(GPIO35)-物理上方
+36,LED_COL1,led_matrix,LED-C1,yes,LED矩阵第1列-左
+37,LED_COL2,led_matrix,LED-C2,yes,LED矩阵第2列-中
+38,LED_COL3,led_matrix,LED-C3,yes,LED矩阵第3列-右
+39,I2C_SDA,i2c,SDA,yes,I2C数据线-Grove接口2和5共用
+40,I2C_SCL,i2c,SCL,yes,I2C时钟线-Grove接口2和5共用
+41,PS2_CLK,ps2,PS2-CLK,yes,PS2手柄时钟信号
+42,PS2_CS,ps2,PS2-CS,yes,PS2手柄片选信号
+43,UART_TX,uart,TX,yes,串口发送
+44,UART_RX,uart,RX,yes,串口接收
+45,D9,gpio,D9,caution,排针引出-启动模式选择-谨慎使用
+46,D10,gpio,D10,caution,排针引出-启动模式选择-谨慎使用
+47,SERVO_S1,servo,S1,yes,舵机通道1
+48,SERVO_S2,servo,S2,yes,舵机通道2
