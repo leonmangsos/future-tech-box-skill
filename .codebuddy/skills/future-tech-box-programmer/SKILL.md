@@ -336,12 +336,89 @@ python %USERPROFILE%\.platformio\packages\tool-esptoolpy\esptool.py ^
 | LED 矩阵 | ✅ | "让 LED 呼吸灯效果" |
 | 按键 | ✅ | "按下按键 A 时..." |
 | 蜂鸣器 | ✅ | "播放一段音乐" |
-| 电机 | ✅ | "让小车前进" |
-| 舵机 | ✅ | "舵机转到 90 度" |
-| I2C 设备 | 🔄 | "读取温度传感器" |
-| PS2 手柄 | 🔄 | "用手柄控制小车" |
+| 超声波传感器 | ✅ | "测量前方距离" |
+| **电机控制** | ✅ | "让小车前进"、"原地左转" |
+| **循迹传感器** | ✅ | "实现循迹小车" |
+| **舵机/机械臂** | ✅ | "控制机械臂抓取物体" |
+| **PS2 手柄** | ✅ | "用手柄遥控小车" |
+| **I2C 加速度计** | ✅ | "检测倾斜方向" |
+| **I2C 颜色传感器** | ✅ | "识别颜色" |
+| **I2C 温湿度** | ✅ | "读取当前温度" |
 
-✅ = 已支持，🔄 = 开发中
+✅ = 已支持
+
+### 小车形态电机布局
+
+```
+        前方
+    ┌─────────┐
+    │  M1  M2 │   M1=左上(GPIO11/12)  M2=右上(GPIO14/13)
+    │         │
+    │  M3  M4 │   M3=左下(GPIO15/16)  M4=右下(GPIO18/17)
+    └─────────┘
+        后方
+```
+
+**⚠️ 重要**：右侧电机 (M2, M4) 的正反转 GPIO 顺序与左侧相反：
+- M1(左上): GPIO11=正转, GPIO12=反转
+- M2(右上): GPIO14=正转, GPIO13=反转 ← 注意顺序
+- M3(左下): GPIO15=正转, GPIO16=反转
+- M4(右下): GPIO18=正转, GPIO17=反转 ← 注意顺序
+
+**电机控制代码模板**：
+```cpp
+#define M1_FWD 11
+#define M1_REV 12
+#define M2_FWD 14  // 注意：不是13
+#define M2_REV 13
+#define M3_FWD 15
+#define M3_REV 16
+#define M4_FWD 18  // 注意：不是17
+#define M4_REV 17
+
+void setMotors(int leftSpeed, int rightSpeed) {
+  // leftSpeed/rightSpeed: -255~255, 正数前进，负数后退
+  setMotor(M1_FWD, M1_REV, leftSpeed);
+  setMotor(M2_FWD, M2_REV, rightSpeed);
+  setMotor(M3_FWD, M3_REV, leftSpeed);
+  setMotor(M4_FWD, M4_REV, rightSpeed);
+}
+
+// 前进: setMotors(180, 180);
+// 后退: setMotors(-180, -180);
+// 左转: setMotors(-150, 150);
+// 右转: setMotors(150, -150);
+```
+
+### I²C 传感器接口
+
+| 传感器 | 型号 | I²C 地址 | 库名称 |
+|--------|------|----------|--------|
+| 加速度计 | LIS3DHTR | 0x18 | `LIS3DHTR` |
+| 颜色传感器 | VEML6040 | 0x10 | `VEML6040` |
+| 温湿度 | DHT20 | 0x38 | `Grove Temperature And Humidity Sensor` |
+
+**I²C 初始化必须指定引脚**：
+```cpp
+#include <Wire.h>
+Wire.begin(39, 40);  // SDA=GPIO39, SCL=GPIO40
+```
+
+### PS2 手柄引脚
+
+| 功能 | GPIO |
+|------|------|
+| CLK | GPIO41 |
+| CMD | GPIO9 |
+| CS | GPIO42 |
+| DAT | GPIO10 |
+
+### 循迹传感器引脚
+
+| 传感器 | GPIO | 接口 |
+|--------|------|------|
+| 左循迹 | GPIO2 | 接口3-PIN1 |
+| 右循迹 | GPIO1 | 接口3-PIN2 |
 
 ### ⚠️ LED 矩阵控制要点（必读）
 

@@ -18,11 +18,11 @@
 
 ### ⚠️ 重要说明
 
-> **当前版本状态：开发中（v0.1.0-beta）**
+> **当前版本状态：v0.2.0-beta（小车形态支持）**
 >
 > - ✅ 仅支持「**未来科技盒 2.0**」主板
 > - ❌ 不支持其他版本（1.0、3.0 等）
-> - 🔄 部分功能仍在开发中
+> - ✅ 新增小车形态完整支持
 
 ### ✅ 已支持功能
 
@@ -32,18 +32,26 @@
 | 按键控制（A/B） | ✅ 完成 | 边沿检测、非阻塞消抖 |
 | 蜂鸣器 | ✅ 完成 | 音调播放、非阻塞控制 |
 | 超声波传感器 | ✅ 完成 | 测距 3-350cm、LED 联动、非阻塞 |
-| 电机控制 | 🔄 基础 | 正反转、PWM 调速 |
-| 舵机控制 | 🔄 基础 | 角度控制 |
+| **电机控制（小车）** | ✅ **完成** | 4电机 PWM 调速、前进/后退/转弯/横移 |
+| **循迹传感器** | ✅ **完成** | 双路循迹、循迹小车 |
+| **舵机/机械臂** | ✅ **完成** | 双舵机控制、抓取动作 |
+| **PS2 手柄** | ✅ **完成** | 双摇杆控制、按键检测 |
+| **I²C 加速度计** | ✅ **完成** | LIS3DHTR ±2g~±16g |
+| **I²C 颜色传感器** | ✅ **完成** | VEML6040 RGBW 识别 |
+| **I²C 温湿度** | ✅ **完成** | DHT20 温湿度读取 |
 | 串口通讯 | ✅ 完成 | 调试输出 |
 
-### 🔄 开发中功能
+### 🚗 小车形态电机布局
 
-| 功能模块 | 状态 | 预计完成 |
-|---------|------|---------|
-| I2C 设备 | 🔄 开发中 | 待定 |
-| PS2 手柄 | 🔄 开发中 | 待定 |
-| 其他 Grove 传感器 | 📋 计划中 | 待定 |
-| 小车综合控制 | 📋 计划中 | 待定 |
+```
+        前方
+    ┌─────────┐
+    │  M1  M2 │   M1=左上  M2=右上
+    │         │
+    │  M3  M4 │   M3=左下  M4=右下
+    └─────────┘
+        后方
+```
 
 ### 📁 文件结构
 
@@ -53,7 +61,9 @@ future-tech-box-programmer/
 ├── README.md                   # 本说明文件
 ├── references/
 │   ├── future_tech_box_v2_hardware.md  # 硬件规格文档
-│   └── pinout_mapping.csv              # 引脚映射表
+│   ├── pinout_mapping.csv              # 引脚映射表
+│   └── libraries/                      # 库文件
+│       └── PS2X_lib/                   # PS2 手柄库
 └── scripts/
     ├── check_environment.py    # 环境检测脚本
     ├── detect_port_windows.py  # Windows 串口检测
@@ -94,7 +104,11 @@ your-project/
 "让 LED 灯从 1 号到 9 号依次亮起"
 "按下按键 A 时蜂鸣器响一声，点亮所有灯"
 "让小车前进 3 秒后停止"
-"播放一段简单的音乐"
+"实现循迹小车功能"
+"用 PS2 手柄遥控小车"
+"读取当前温度和湿度"
+"识别前方物体的颜色"
+"检测主板的倾斜方向"
 ```
 
 ### ⚙️ 系统要求
@@ -111,6 +125,26 @@ your-project/
 3. **命令超时**：长时间编译可能触发 IDE 超时，可在终端手动执行
 
 ### 📝 更新日志
+
+#### v0.2.0-beta (2026-04-06)
+- ✅ **新增小车形态完整支持**
+  - 4电机 PWM 控制（M1-M4）
+  - 前进/后退/左转/右转/原地转/横移
+- ✅ **新增循迹传感器支持**
+  - 双路循迹模块
+  - 循迹小车示例
+- ✅ **新增 I²C 传感器支持**
+  - LIS3DHTR 三轴加速度计
+  - VEML6040 RGBW 颜色传感器
+  - DHT20 温湿度传感器
+- ✅ **新增 PS2 手柄遥控**
+  - 双摇杆控制
+  - 按键检测
+- ✅ **新增舵机/机械臂控制**
+  - 双舵机控制
+  - 抓取动作示例
+- 📝 大幅更新硬件文档
+- 📝 添加多个示例项目
 
 #### v0.1.1-beta (2026-03-16)
 - ✅ 新增超声波传感器支持（测距 3-350cm）
@@ -156,11 +190,11 @@ Through natural language descriptions, AI can automatically:
 
 ### ⚠️ Important Notes
 
-> **Current Version Status: In Development (v0.1.0-beta)**
+> **Current Version Status: v0.2.0-beta (Car Mode Support)**
 >
 > - ✅ Only supports "**Future Tech Box 2.0**"
 > - ❌ Does NOT support other versions (1.0, 3.0, etc.)
-> - 🔄 Some features are still under development
+> - ✅ Full car mode support added
 
 ### ✅ Supported Features
 
@@ -170,18 +204,14 @@ Through natural language descriptions, AI can automatically:
 | Button Control (A/B) | ✅ Done | Edge detection, non-blocking debounce |
 | Buzzer | ✅ Done | Tone playback, non-blocking control |
 | Ultrasonic Sensor | ✅ Done | Range 3-350cm, LED integration, non-blocking |
-| Motor Control | 🔄 Basic | Forward/reverse, PWM speed control |
-| Servo Control | 🔄 Basic | Angle control |
+| **Motor Control (Car)** | ✅ **Done** | 4-motor PWM, forward/backward/turn/strafe |
+| **Line Follower** | ✅ **Done** | Dual sensors, line following car |
+| **Servo/Arm** | ✅ **Done** | Dual servo, grab actions |
+| **PS2 Controller** | ✅ **Done** | Dual joystick, button detection |
+| **I²C Accelerometer** | ✅ **Done** | LIS3DHTR ±2g~±16g |
+| **I²C Color Sensor** | ✅ **Done** | VEML6040 RGBW detection |
+| **I²C Temp/Humidity** | ✅ **Done** | DHT20 reading |
 | Serial Communication | ✅ Done | Debug output |
-
-### 🔄 Features In Development
-
-| Module | Status | ETA |
-|--------|--------|-----|
-| I2C Devices | 🔄 In Progress | TBD |
-| PS2 Controller | 🔄 In Progress | TBD |
-| Other Grove Sensors | 📋 Planned | TBD |
-| Car Comprehensive Control | 📋 Planned | TBD |
 
 ### 📄 License
 

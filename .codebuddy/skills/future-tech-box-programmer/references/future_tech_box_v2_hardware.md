@@ -18,18 +18,142 @@
 
 ---
 
-## 电机（Motor）
+## 电机（Motor）- 小车形态
 
-小车模式下电机位置对应关系：
+### 电机布局图
 
-| 电机编号 | 位置 | GPIO（正向） | GPIO（反向） |
-|---------|------|-------------|-------------|
-| M1 | 左前方 | GPIO11 | GPIO12 |
-| M2 | 右前方 | GPIO13 | GPIO14 |
-| M3 | 左后方 | GPIO15 | GPIO16 |
-| M4 | 右后方 | GPIO17 | GPIO18 |
+```
+        前方
+    ┌─────────┐
+    │  M1  M2 │   M1=左上  M2=右上
+    │         │
+    │  M3  M4 │   M3=左下  M4=右下
+    └─────────┘
+        后方
+```
+
+### 电机 GPIO 对应关系
+
+| 电机编号 | 位置 | 正转 GPIO | 反转 GPIO | 说明 |
+|---------|------|-----------|-----------|------|
+| M1 | 左上 | GPIO11 | GPIO12 | 左侧电机 |
+| M2 | 右上 | GPIO14 | GPIO13 | 右侧电机（方向相反） |
+| M3 | 左下 | GPIO15 | GPIO16 | 左侧电机 |
+| M4 | 右下 | GPIO18 | GPIO17 | 右侧电机（方向相反） |
+
+**⚠️ 重要**：右侧电机 (M2, M4) 的正反转 GPIO 顺序与左侧相反，因为物理安装方向相反。
 
 **控制方式**：每个电机使用两个 GPIO 进行 H 桥控制（正反转 + PWM 调速）
+
+### 📌 电机控制代码示例
+
+```cpp
+// 电机引脚定义
+#define M1_FWD 11  // 左上正转
+#define M1_REV 12  // 左上反转
+#define M2_FWD 14  // 右上正转（注意：GPIO14是正转，GPIO13是反转）
+#define M2_REV 13  // 右上反转
+#define M3_FWD 15  // 左下正转
+#define M3_REV 16  // 左下反转
+#define M4_FWD 18  // 右下正转（注意：GPIO18是正转，GPIO17是反转）
+#define M4_REV 17  // 右下反转
+
+void setup() {
+  // 初始化所有电机引脚
+  pinMode(M1_FWD, OUTPUT); pinMode(M1_REV, OUTPUT);
+  pinMode(M2_FWD, OUTPUT); pinMode(M2_REV, OUTPUT);
+  pinMode(M3_FWD, OUTPUT); pinMode(M3_REV, OUTPUT);
+  pinMode(M4_FWD, OUTPUT); pinMode(M4_REV, OUTPUT);
+  
+  // 设置PWM频率（推荐10kHz）
+  analogWriteFrequency(10000);
+}
+
+// 设置单个电机速度：speed > 0 正转，speed < 0 反转，speed = 0 停止
+void setMotor(int fwdPin, int revPin, int speed) {
+  speed = constrain(speed, -255, 255);
+  if (speed > 0) {
+    analogWrite(fwdPin, speed);
+    analogWrite(revPin, 0);
+  } else if (speed < 0) {
+    analogWrite(fwdPin, 0);
+    analogWrite(revPin, -speed);
+  } else {
+    analogWrite(fwdPin, 0);
+    analogWrite(revPin, 0);
+  }
+}
+
+// 设置所有电机（左侧速度，右侧速度）
+void setMotors(int leftSpeed, int rightSpeed) {
+  setMotor(M1_FWD, M1_REV, leftSpeed);   // 左上
+  setMotor(M2_FWD, M2_REV, rightSpeed);  // 右上
+  setMotor(M3_FWD, M3_REV, leftSpeed);   // 左下
+  setMotor(M4_FWD, M4_REV, rightSpeed);  // 右下
+}
+
+// 小车运动函数
+void carStop() {
+  setMotors(0, 0);
+}
+
+void carForward(int speed = 180) {
+  setMotors(speed, speed);
+}
+
+void carBackward(int speed = 180) {
+  setMotors(-speed, -speed);
+}
+
+void carTurnLeft(int speed = 180) {
+  setMotors(-speed, speed);  // 原地左转
+}
+
+void carTurnRight(int speed = 180) {
+  setMotors(speed, -speed);  // 原地右转
+}
+
+void carArcLeft(int speed = 180) {
+  setMotors(speed / 2, speed);  // 弧线左转
+}
+
+void carArcRight(int speed = 180) {
+  setMotors(speed, speed / 2);  // 弧线右转
+}
+
+void loop() {
+  carForward(180);
+  delay(1000);
+  carStop();
+  delay(500);
+  carTurnLeft(150);
+  delay(500);
+  carStop();
+  delay(500);
+}
+```
+
+### 📌 麦克纳姆轮小车全向移动（如适用）
+
+如果使用麦克纳姆轮，可以实现横移：
+
+```cpp
+// 左平移
+void carMoveLeft(int speed = 180) {
+  setMotor(M1_FWD, M1_REV, -speed);  // 左上反转
+  setMotor(M2_FWD, M2_REV, speed);   // 右上正转
+  setMotor(M3_FWD, M3_REV, speed);   // 左下正转
+  setMotor(M4_FWD, M4_REV, -speed);  // 右下反转
+}
+
+// 右平移
+void carMoveRight(int speed = 180) {
+  setMotor(M1_FWD, M1_REV, speed);   // 左上正转
+  setMotor(M2_FWD, M2_REV, -speed);  // 右上反转
+  setMotor(M3_FWD, M3_REV, -speed);  // 左下反转
+  setMotor(M4_FWD, M4_REV, speed);   // 右下正转
+}
+```
 
 ---
 
@@ -444,14 +568,464 @@ void loop() {
 
 ---
 
-## 舵机（Servo）
+## 舵机（Servo）- 机械臂控制
 
-| 舵机编号 | GPIO | 说明 |
+| 舵机编号 | GPIO | 用途 |
 |---------|------|------|
-| S1 | GPIO47 | 舵机通道 1 |
-| S2 | GPIO48 | 舵机通道 2 |
+| S1 | GPIO47 | 机械臂舵机（上下运动） |
+| S2 | GPIO48 | 夹子舵机（开合抓取） |
 
-**控制方式**：PWM（50Hz，脉宽 500-2500μs 对应 0-180°）
+**控制方式**：软件 PWM 定时器中断（50Hz，脉宽 500-2500μs 对应 0-180°）
+
+### 📌 舵机控制代码示例
+
+```cpp
+#define SERVO1_PIN 47  // 机械臂（上下）
+#define SERVO2_PIN 48  // 夹子（开合）
+
+// 使用软件PWM控制舵机
+hw_timer_t* servoTimer = NULL;
+volatile uint16_t servo1Value = 128;  // PWM占空比 (约90度)
+volatile uint16_t servo2Value = 128;
+const uint16_t PWM_PERIOD = 255;
+
+// 定时器中断函数
+void IRAM_ATTR servoTimerISR() {
+  static uint8_t pwmCount1 = 0;
+  static uint8_t pwmCount2 = 0;
+  
+  // 舵机1 PWM
+  if (++pwmCount1 >= servo1Value) {
+    digitalWrite(SERVO1_PIN, LOW);
+  }
+  if (pwmCount1 >= PWM_PERIOD) {
+    pwmCount1 = 0;
+    digitalWrite(SERVO1_PIN, HIGH);
+  }
+  
+  // 舵机2 PWM
+  if (++pwmCount2 >= servo2Value) {
+    digitalWrite(SERVO2_PIN, LOW);
+  }
+  if (pwmCount2 >= PWM_PERIOD) {
+    pwmCount2 = 0;
+    digitalWrite(SERVO2_PIN, HIGH);
+  }
+}
+
+void setup() {
+  pinMode(SERVO1_PIN, OUTPUT);
+  pinMode(SERVO2_PIN, OUTPUT);
+  
+  // 初始化定时器（周期100us，实现约50Hz舵机控制）
+  servoTimer = timerBegin(1, 80, true);  // 定时器1, 分频80, 向上计数
+  timerAttachInterrupt(servoTimer, &servoTimerISR, true);
+  timerAlarmWrite(servoTimer, 100, true);  // 100us周期
+  timerAlarmEnable(servoTimer);
+}
+
+// 设置舵机角度（0-180度）
+void setServo1Angle(int angle) {
+  angle = constrain(angle, 0, 180);
+  // 角度映射到PWM值（4-13对应0-180度，根据实际调整）
+  servo1Value = map(angle, 0, 180, 4, 13);
+}
+
+void setServo2Angle(int angle) {
+  angle = constrain(angle, 0, 180);
+  servo2Value = map(angle, 0, 180, 4, 13);
+}
+
+// 机械臂抓取动作示例
+void grabObject() {
+  // 1. 机械臂下降
+  for (int angle = 40; angle <= 100; angle += 2) {
+    setServo1Angle(angle);
+    delay(50);
+  }
+  delay(500);
+  
+  // 2. 夹子合拢
+  for (int angle = 130; angle >= 60; angle -= 2) {
+    setServo2Angle(angle);
+    delay(50);
+  }
+  delay(500);
+  
+  // 3. 机械臂抬起
+  for (int angle = 100; angle >= 40; angle -= 2) {
+    setServo1Angle(angle);
+    delay(50);
+  }
+}
+
+// 机械臂释放动作
+void releaseObject() {
+  // 夹子张开
+  for (int angle = 60; angle <= 130; angle += 2) {
+    setServo2Angle(angle);
+    delay(50);
+  }
+}
+
+void loop() {
+  grabObject();
+  delay(2000);
+  releaseObject();
+  delay(2000);
+}
+```
+
+---
+
+## 循迹传感器（Line Follower）
+
+循迹传感器用于检测黑线，实现循迹小车功能。
+
+| 传感器 | GPIO | 接口 | 说明 |
+|--------|------|------|------|
+| 左循迹 | GPIO2 | 接口3-PIN1 | 数字输入，检测到黑线=LOW |
+| 右循迹 | GPIO1 | 接口3-PIN2 | 数字输入，检测到黑线=LOW |
+
+### 📌 循迹传感器代码示例
+
+```cpp
+#define LINE_LEFT  2   // 左循迹传感器
+#define LINE_RIGHT 1   // 右循迹传感器
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(LINE_LEFT, INPUT);
+  pinMode(LINE_RIGHT, INPUT);
+}
+
+void loop() {
+  int left = digitalRead(LINE_LEFT);   // 0=检测到黑线, 1=白色
+  int right = digitalRead(LINE_RIGHT);
+  
+  Serial.print("左: ");
+  Serial.print(left ? "白" : "黑");
+  Serial.print("  右: ");
+  Serial.println(right ? "白" : "黑");
+  
+  delay(100);
+}
+```
+
+### 📌 循迹小车完整示例
+
+```cpp
+#define LINE_LEFT  2
+#define LINE_RIGHT 1
+
+// 电机引脚（参见电机章节）
+#define M1_FWD 11
+#define M1_REV 12
+#define M2_FWD 14
+#define M2_REV 13
+#define M3_FWD 15
+#define M3_REV 16
+#define M4_FWD 18
+#define M4_REV 17
+
+void setMotor(int fwdPin, int revPin, int speed) {
+  speed = constrain(speed, -255, 255);
+  if (speed > 0) {
+    analogWrite(fwdPin, speed);
+    analogWrite(revPin, 0);
+  } else if (speed < 0) {
+    analogWrite(fwdPin, 0);
+    analogWrite(revPin, -speed);
+  } else {
+    analogWrite(fwdPin, 0);
+    analogWrite(revPin, 0);
+  }
+}
+
+void setMotors(int leftSpeed, int rightSpeed) {
+  setMotor(M1_FWD, M1_REV, leftSpeed);
+  setMotor(M2_FWD, M2_REV, rightSpeed);
+  setMotor(M3_FWD, M3_REV, leftSpeed);
+  setMotor(M4_FWD, M4_REV, rightSpeed);
+}
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(LINE_LEFT, INPUT);
+  pinMode(LINE_RIGHT, INPUT);
+  
+  pinMode(M1_FWD, OUTPUT); pinMode(M1_REV, OUTPUT);
+  pinMode(M2_FWD, OUTPUT); pinMode(M2_REV, OUTPUT);
+  pinMode(M3_FWD, OUTPUT); pinMode(M3_REV, OUTPUT);
+  pinMode(M4_FWD, OUTPUT); pinMode(M4_REV, OUTPUT);
+  
+  analogWriteFrequency(10000);
+}
+
+void loop() {
+  int left = digitalRead(LINE_LEFT);
+  int right = digitalRead(LINE_RIGHT);
+  
+  if (left == 1 && right == 1) {
+    // 两边都是白色，直行
+    setMotors(180, 180);
+  } else if (left == 0 && right == 1) {
+    // 左边检测到黑线，左转
+    setMotors(-90, 200);
+  } else if (left == 1 && right == 0) {
+    // 右边检测到黑线，右转
+    setMotors(200, -90);
+  } else {
+    // 两边都是黑线，停止或后退
+    setMotors(-150, -150);
+  }
+  
+  delay(10);
+}
+```
+
+---
+
+## I²C 传感器
+
+未来科技盒 2.0 支持多种 I²C 传感器，通过 Grove 接口 2 或 5 连接。
+
+| 引脚 | GPIO | 说明 |
+|------|------|------|
+| SDA | GPIO39 | I²C 数据线 |
+| SCL | GPIO40 | I²C 时钟线 |
+
+### 支持的 I²C 传感器
+
+| 传感器型号 | I²C 地址 | 功能 | 推荐库 |
+|-----------|----------|------|--------|
+| LIS3DHTR | 0x18/0x19 | 三轴加速度计 ±2g~±16g + 温度 | `LIS3DHTR` |
+| VEML6040 | 0x10 | RGBW 颜色传感器 + 环境光 | `VEML6040` |
+| DHT20 | 0x38 | 温湿度传感器 | `Grove_Temperature_And_Humidity_Sensor` |
+
+### 📌 I²C 初始化（通用）
+
+```cpp
+#include <Wire.h>
+
+#define I2C_SDA 39
+#define I2C_SCL 40
+
+void setup() {
+  Serial.begin(115200);
+  Wire.begin(I2C_SDA, I2C_SCL);  // 指定SDA和SCL引脚
+}
+```
+
+---
+
+### LIS3DHTR 三轴加速度计
+
+测量范围：±2g, ±4g, ±8g, ±16g
+I²C 地址：0x18（默认）或 0x19
+
+**PlatformIO 库依赖**：
+```ini
+lib_deps = 
+    seeed-studio/Grove-3-Axis-Digital-Accelerometer-2g-to-16g-LIS3DHTR
+```
+
+**代码示例**：
+
+```cpp
+#include <Wire.h>
+#include "LIS3DHTR.h"
+
+LIS3DHTR<TwoWire> accel;
+
+#define I2C_SDA 39
+#define I2C_SCL 40
+
+void setup() {
+  Serial.begin(115200);
+  Wire.begin(I2C_SDA, I2C_SCL);
+  
+  accel.begin(Wire, 0x18);  // I2C地址0x18
+  if (!accel) {
+    Serial.println("LIS3DHTR 未检测到!");
+    while(1);
+  }
+  
+  accel.setOutputDataRate(LIS3DHTR_DATARATE_50HZ);
+  accel.setFullScaleRange(LIS3DHTR_RANGE_2G);
+  accel.setHighSolution(true);
+  
+  Serial.println("LIS3DHTR 初始化成功!");
+}
+
+void loop() {
+  float x = accel.getAccelerationX();
+  float y = accel.getAccelerationY();
+  float z = accel.getAccelerationZ();
+  
+  Serial.print("X: "); Serial.print(x, 2);
+  Serial.print("  Y: "); Serial.print(y, 2);
+  Serial.print("  Z: "); Serial.println(z, 2);
+  
+  delay(100);
+}
+```
+
+**倾斜检测示例**：
+
+```cpp
+void loop() {
+  float x = accel.getAccelerationX();
+  float y = accel.getAccelerationY();
+  
+  if (x > 0.3) {
+    Serial.println("向右倾斜");
+  } else if (x < -0.3) {
+    Serial.println("向左倾斜");
+  }
+  
+  if (y > 0.3) {
+    Serial.println("向前倾斜");
+  } else if (y < -0.3) {
+    Serial.println("向后倾斜");
+  }
+  
+  delay(100);
+}
+```
+
+---
+
+### VEML6040 RGBW 颜色传感器
+
+测量：红、绿、蓝、白色光强度 + 色温 + 环境光照度
+I²C 地址：0x10
+
+**PlatformIO 库依赖**：
+```ini
+lib_deps = 
+    thewknd/VEML6040
+```
+
+**代码示例**：
+
+```cpp
+#include <Wire.h>
+#include "veml6040.h"
+
+VEML6040 colorSensor;
+
+#define I2C_SDA 39
+#define I2C_SCL 40
+
+void setup() {
+  Serial.begin(115200);
+  Wire.begin(I2C_SDA, I2C_SCL);
+  
+  if (!colorSensor.begin()) {
+    Serial.println("VEML6040 未检测到!");
+    while(1);
+  }
+  
+  // 设置配置：320ms积分时间 + 自动模式 + 使能
+  colorSensor.setConfiguration(VEML6040_IT_320MS + VEML6040_AF_AUTO + VEML6040_SD_ENABLE);
+  
+  Serial.println("VEML6040 初始化成功!");
+}
+
+void loop() {
+  uint16_t red = colorSensor.getRed();
+  uint16_t green = colorSensor.getGreen();
+  uint16_t blue = colorSensor.getBlue();
+  uint16_t white = colorSensor.getWhite();
+  uint16_t cct = colorSensor.getCCT();  // 色温
+  float lux = colorSensor.getAmbientLight();  // 环境光
+  
+  Serial.print("R:"); Serial.print(red);
+  Serial.print(" G:"); Serial.print(green);
+  Serial.print(" B:"); Serial.print(blue);
+  Serial.print(" W:"); Serial.print(white);
+  Serial.print(" CCT:"); Serial.print(cct);
+  Serial.print("K Lux:"); Serial.println(lux);
+  
+  delay(400);
+}
+```
+
+**颜色识别示例**：
+
+```cpp
+String detectColor() {
+  uint16_t r = colorSensor.getRed();
+  uint16_t g = colorSensor.getGreen();
+  uint16_t b = colorSensor.getBlue();
+  uint16_t w = colorSensor.getWhite();
+  
+  // 光线太暗或太亮时无法识别
+  if (w < 500 || w > 5000) {
+    return "未知";
+  }
+  
+  // 找出最大分量
+  if (r > g && r > b && r > 100) {
+    return "红色";
+  } else if (g > r && g > b && g > 100) {
+    return "绿色";
+  } else if (b > r && b > g && b > 100) {
+    return "蓝色";
+  } else {
+    return "未知";
+  }
+}
+```
+
+---
+
+### DHT20 温湿度传感器
+
+测量范围：温度 -40~80°C，湿度 0~100%
+I²C 地址：0x38
+
+**PlatformIO 库依赖**：
+```ini
+lib_deps = 
+    seeed-studio/Grove Temperature And Humidity Sensor
+```
+
+**代码示例**：
+
+```cpp
+#include <Wire.h>
+#include "Grove_Temperature_And_Humidity_Sensor.h"
+
+DHT dht(DHT20);  // DHT20 使用I2C，无需指定引脚
+
+#define I2C_SDA 39
+#define I2C_SCL 40
+
+void setup() {
+  Serial.begin(115200);
+  Wire.begin(I2C_SDA, I2C_SCL);
+  dht.begin();
+  Serial.println("DHT20 初始化成功!");
+}
+
+void loop() {
+  float data[2] = {0};
+  
+  if (!dht.readTempAndHumidity(data)) {
+    Serial.print("湿度: ");
+    Serial.print(data[0], 1);
+    Serial.print(" %  温度: ");
+    Serial.print(data[1], 1);
+    Serial.println(" °C");
+  } else {
+    Serial.println("读取失败!");
+  }
+  
+  delay(2000);  // DHT20 读取间隔至少2秒
+}
+```
 
 ---
 
@@ -638,7 +1212,7 @@ if (d > 0) {  // ⚠️ 应该检查 d > 3
 
 ---
 
-## PS2 手柄接口
+## PS2 手柄遥控
 
 | 功能 | GPIO | 说明 |
 |-----|------|------|
@@ -647,7 +1221,178 @@ if (d > 0) {  // ⚠️ 应该检查 d > 3
 | PS2_CLK | GPIO41 | 时钟信号 |
 | PS2_CS | GPIO42 | 片选信号 |
 
-**推荐库**：`PS2X_lib`
+**推荐库**：`PS2X_lib`（已适配 ESP32）
+
+### 📌 PlatformIO 库配置
+
+在 `platformio.ini` 中添加 PS2X 库（需要手动添加到 lib 目录）：
+
+```ini
+lib_deps = 
+    ; PS2X_lib 需要手动添加，或使用本地库
+```
+
+### 📌 PS2 手柄控制小车完整示例
+
+```cpp
+#include <Arduino.h>
+#include "PS2X_lib.h"
+
+// PS2 手柄引脚
+#define PS2_CLK 41
+#define PS2_CMD 9
+#define PS2_CS  42
+#define PS2_DAT 10
+
+// 电机引脚
+#define M1_FWD 11
+#define M1_REV 12
+#define M2_FWD 14
+#define M2_REV 13
+#define M3_FWD 15
+#define M3_REV 16
+#define M4_FWD 18
+#define M4_REV 17
+
+PS2X ps2x;
+int error = 1;
+
+// 电机速度等级映射表
+const int PWM_LEVELS = 9;
+int pwmValues[PWM_LEVELS] = {0, 150, 160, 170, 190, 210, 220, 230, 240};
+
+void setMotor(int fwdPin, int revPin, int speed) {
+  speed = constrain(speed, -255, 255);
+  if (speed > 0) {
+    analogWrite(fwdPin, speed);
+    analogWrite(revPin, 0);
+  } else if (speed < 0) {
+    analogWrite(fwdPin, 0);
+    analogWrite(revPin, -speed);
+  } else {
+    analogWrite(fwdPin, 0);
+    analogWrite(revPin, 0);
+  }
+}
+
+void setMotors(int leftSpeed, int rightSpeed) {
+  setMotor(M1_FWD, M1_REV, leftSpeed);
+  setMotor(M2_FWD, M2_REV, rightSpeed);
+  setMotor(M3_FWD, M3_REV, leftSpeed);
+  setMotor(M4_FWD, M4_REV, rightSpeed);
+}
+
+void setup() {
+  Serial.begin(115200);
+  
+  // 初始化电机引脚
+  pinMode(M1_FWD, OUTPUT); pinMode(M1_REV, OUTPUT);
+  pinMode(M2_FWD, OUTPUT); pinMode(M2_REV, OUTPUT);
+  pinMode(M3_FWD, OUTPUT); pinMode(M3_REV, OUTPUT);
+  pinMode(M4_FWD, OUTPUT); pinMode(M4_REV, OUTPUT);
+  analogWriteFrequency(10000);
+  
+  // 初始化 PS2 手柄（重试3次）
+  int tryNum = 0;
+  while (error != 0 && tryNum < 3) {
+    delay(1000);
+    error = ps2x.config_gamepad(PS2_CLK, PS2_CMD, PS2_CS, PS2_DAT, false, false);
+    Serial.print("PS2 初始化尝试 ");
+    Serial.println(++tryNum);
+  }
+  
+  if (error == 0) {
+    Serial.println("PS2 手柄连接成功!");
+  } else {
+    Serial.println("PS2 手柄连接失败!");
+  }
+}
+
+void loop() {
+  if (error != 0) {
+    delay(1000);
+    return;
+  }
+  
+  ps2x.read_gamepad(false, 0);  // 读取手柄状态
+  
+  // 获取左摇杆值（0-255，中间值约128）
+  int ly = ps2x.Analog(PSS_LY);  // 上下（上=0，下=255）
+  int lx = ps2x.Analog(PSS_LX);  // 左右（左=0，右=255）
+  
+  // 转换为速度值（-255 到 255）
+  int forward = map(ly, 0, 255, 255, -255);  // 前进后退
+  int turn = map(lx, 0, 255, -200, 200);     // 左右转向
+  
+  // 死区处理（摇杆回中附近不动作）
+  if (abs(forward) < 20) forward = 0;
+  if (abs(turn) < 20) turn = 0;
+  
+  // 计算左右电机速度
+  int leftSpeed = forward + turn;
+  int rightSpeed = forward - turn;
+  
+  // 限幅
+  leftSpeed = constrain(leftSpeed, -255, 255);
+  rightSpeed = constrain(rightSpeed, -255, 255);
+  
+  setMotors(leftSpeed, rightSpeed);
+  
+  // 按键检测示例
+  if (ps2x.ButtonPressed(PSB_CROSS)) {    // X 按下
+    Serial.println("X 键按下");
+  }
+  if (ps2x.ButtonPressed(PSB_CIRCLE)) {   // ○ 按下
+    Serial.println("○ 键按下");
+  }
+  if (ps2x.ButtonPressed(PSB_TRIANGLE)) { // △ 按下
+    Serial.println("△ 键按下");
+  }
+  if (ps2x.ButtonPressed(PSB_SQUARE)) {   // □ 按下
+    Serial.println("□ 键按下");
+  }
+  
+  // L1/R1 肩键
+  if (ps2x.Button(PSB_L1)) {
+    Serial.println("L1 按住");
+  }
+  if (ps2x.Button(PSB_R1)) {
+    Serial.println("R1 按住");
+  }
+  
+  delay(50);
+}
+```
+
+### PS2 按键常量
+
+| 按键 | 常量 | 说明 |
+|------|------|------|
+| × | PSB_CROSS / PSB_BLUE | 蓝色叉 |
+| ○ | PSB_CIRCLE / PSB_RED | 红色圈 |
+| □ | PSB_SQUARE / PSB_PINK | 粉色方 |
+| △ | PSB_TRIANGLE / PSB_GREEN | 绿色三角 |
+| L1 | PSB_L1 | 左肩键1 |
+| R1 | PSB_R1 | 右肩键1 |
+| L2 | PSB_L2 | 左肩键2 |
+| R2 | PSB_R2 | 右肩键2 |
+| L3 | PSB_L3 | 左摇杆按下 |
+| R3 | PSB_R3 | 右摇杆按下 |
+| SELECT | PSB_SELECT | 选择键 |
+| START | PSB_START | 开始键 |
+| ↑ | PSB_PAD_UP | 方向键上 |
+| ↓ | PSB_PAD_DOWN | 方向键下 |
+| ← | PSB_PAD_LEFT | 方向键左 |
+| → | PSB_PAD_RIGHT | 方向键右 |
+
+### PS2 摇杆常量
+
+| 摇杆 | 常量 | 值范围 |
+|------|------|--------|
+| 左摇杆X | PSS_LX | 0(左)-255(右) |
+| 左摇杆Y | PSS_LY | 0(上)-255(下) |
+| 右摇杆X | PSS_RX | 0(左)-255(右) |
+| 右摇杆Y | PSS_RY | 0(上)-255(下) |
 
 ---
 
@@ -720,8 +1465,13 @@ GPIO48 - 舵机S2
 2. **GPIO19-20**：USB 烧录专用，**禁止使用**
 3. **GPIO0**：BOOT 按键，上电时保持高电平，否则进入下载模式
 4. **GPIO45-46**：启动模式选择，使用时需谨慎
-5. **I2C**：接口 2 和接口 5 共用 GPIO39/40，同时只能接一个 I2C 设备地址
-6. **电机控制**：使用 PWM 时注意频率一致性（推荐 1kHz）
+5. **I2C**：接口 2 和接口 5 共用 GPIO39/40
+   - 必须使用 `Wire.begin(39, 40)` 指定引脚
+   - 可同时连接多个不同地址的 I2C 设备
+6. **电机控制**（⚠️ 重要）：
+   - PWM 频率推荐 10kHz：`analogWriteFrequency(10000)`
+   - **右侧电机方向相反**：M2(GPIO14正转/GPIO13反转)、M4(GPIO18正转/GPIO17反转)
+   - 小车前进时左右电机同向，转弯时反向
 7. **LED 矩阵**（⚠️ 重要）：
    - **必须使用行列扫描方式**，不能简单 digitalWrite
    - **点亮条件**：行 HIGH + 列 LOW
@@ -734,3 +1484,36 @@ GPIO48 - 舵机S2
    - 推荐使用接口1/3/4/6
    - 与 LED 矩阵配合时**必须使用非阻塞定时**（millis()）
    - 测量间隔建议 100ms 以上
+9. **I²C 传感器**：
+   - LIS3DHTR（加速度计）：地址 0x18，需要 `LIS3DHTR` 库
+   - VEML6040（颜色传感器）：地址 0x10，需要 `VEML6040` 库
+   - DHT20（温湿度）：地址 0x38，需要 `Grove Temperature And Humidity Sensor` 库
+10. **PS2 手柄**：
+    - 需要 `PS2X_lib` 库（ESP32 版本）
+    - 初始化时需重试机制（最多 3 次）
+    - 摇杆中间值约 128，需要死区处理
+11. **舵机控制**：
+    - 使用软件 PWM 定时器中断实现
+    - 角度范围 0-180°，PWM 值范围约 4-13
+
+---
+
+## PlatformIO 库依赖配置
+
+根据使用的功能，在 `platformio.ini` 中添加相应的库依赖：
+
+```ini
+[env:seeed_xiao_esp32s3]
+platform = espressif32
+board = seeed_xiao_esp32s3
+framework = arduino
+
+lib_deps = 
+    ; I2C 传感器库
+    seeed-studio/Grove-3-Axis-Digital-Accelerometer-2g-to-16g-LIS3DHTR@^1.2.4
+    thewknd/VEML6040@^0.3.2
+    seeed-studio/Grove Temperature And Humidity Sensor@^2.0.2
+    
+    ; PS2 手柄库（需要手动添加或使用本地库）
+    ; Arduino-PS2X-ESP32
+```
