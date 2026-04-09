@@ -93,6 +93,8 @@ void setMotors(int leftSpeed, int rightSpeed) {
 }
 
 // 小车运动函数
+// ⚠️ 默认速度建议 180（70%功率），避免触发电池保护
+// 速度范围：0-255，建议不超过 220（86%）
 void carStop() {
   setMotors(0, 0);
 }
@@ -133,25 +135,214 @@ void loop() {
 }
 ```
 
-### 📌 麦克纳姆轮小车全向移动（如适用）
+### 📌 麦克纳姆轮小车全向移动
 
-如果使用麦克纳姆轮，可以实现横移：
+麦克纳姆轮（Mecanum Wheel）是一种特殊的全向轮，可以实现小车的横向移动和斜向移动（楔形移动），极大增强了小车的机动性。
+
+#### 麦克纳姆轮运动原理
+
+麦克纳姆轮通过四个轮子的不同转向组合，可以实现 8 个方向的移动：
+
+```
+        前方
+    ┌─────────┐
+    │  M1  M2 │   M1=左上  M2=右上
+    │    ↑    │
+    │  M3  M4 │   M3=左下  M4=右下
+    └─────────┘
+        后方
+```
+
+#### 运动方向对照表
+
+| 方向 | M1(左上) | M2(右上) | M3(左下) | M4(右下) | 说明 |
+|------|----------|----------|----------|----------|------|
+| **前进** | 正 | 正 | 正 | 正 | 四轮同向前进 |
+| **后退** | 反 | 反 | 反 | 反 | 四轮同向后退 |
+| **左横移** | 反 | 正 | 正 | 反 | 对角轮方向相反 |
+| **右横移** | 正 | 反 | 反 | 正 | 对角轮方向相反 |
+| **左前楔形** | 停 | 正 | 正 | 停 | 右对角轮转动 |
+| **右前楔形** | 正 | 停 | 停 | 正 | 左对角轮转动 |
+| **左后楔形** | 反 | 停 | 停 | 反 | 左对角轮反转 |
+| **右后楔形** | 停 | 反 | 反 | 停 | 右对角轮反转 |
+| **原地左转** | 反 | 正 | 反 | 正 | 左侧反转右侧正转 |
+| **原地右转** | 正 | 反 | 正 | 反 | 左侧正转右侧反转 |
+
+#### 麦克纳姆轮控制代码
 
 ```cpp
-// 左平移
-void carMoveLeft(int speed = 180) {
-  setMotor(M1_FWD, M1_REV, -speed);  // 左上反转
-  setMotor(M2_FWD, M2_REV, speed);   // 右上正转
-  setMotor(M3_FWD, M3_REV, speed);   // 左下正转
-  setMotor(M4_FWD, M4_REV, -speed);  // 右下反转
+// ==================== 麦克纳姆轮全向移动函数 ====================
+
+// ⚠️ 默认速度建议 180（70%功率），避免触发电池保护
+// 速度范围：0-255，建议不超过 220（86%）
+
+// 设置四个电机独立速度（用于全向控制）
+void setMotorsSeparate(int m1Speed, int m2Speed, int m3Speed, int m4Speed) {
+  setMotor(M1_FWD, M1_REV, m1Speed);  // 左上
+  setMotor(M2_FWD, M2_REV, m2Speed);  // 右上
+  setMotor(M3_FWD, M3_REV, m3Speed);  // 左下
+  setMotor(M4_FWD, M4_REV, m4Speed);  // 右下
 }
 
-// 右平移
+// ---------- 基本运动 ----------
+
+// 前进
+void carForward(int speed = 180) {
+  setMotorsSeparate(speed, speed, speed, speed);
+}
+
+// 后退
+void carBackward(int speed = 180) {
+  setMotorsSeparate(-speed, -speed, -speed, -speed);
+}
+
+// 原地左转
+void carTurnLeft(int speed = 180) {
+  setMotorsSeparate(-speed, speed, -speed, speed);
+}
+
+// 原地右转
+void carTurnRight(int speed = 180) {
+  setMotorsSeparate(speed, -speed, speed, -speed);
+}
+
+// 停止
+void carStop() {
+  setMotorsSeparate(0, 0, 0, 0);
+}
+
+// ---------- 横向移动（麦克纳姆轮特有） ----------
+
+// 左横移（左平移）
+void carMoveLeft(int speed = 180) {
+  // M1反转, M2正转, M3正转, M4反转
+  setMotorsSeparate(-speed, speed, speed, -speed);
+}
+
+// 右横移（右平移）
 void carMoveRight(int speed = 180) {
-  setMotor(M1_FWD, M1_REV, speed);   // 左上正转
-  setMotor(M2_FWD, M2_REV, -speed);  // 右上反转
-  setMotor(M3_FWD, M3_REV, -speed);  // 左下反转
-  setMotor(M4_FWD, M4_REV, speed);   // 右下正转
+  // M1正转, M2反转, M3反转, M4正转
+  setMotorsSeparate(speed, -speed, -speed, speed);
+}
+
+// ---------- 楔形移动（斜向移动） ----------
+
+// 左前楔形（45°左前方移动）
+void carMoveFrontLeft(int speed = 180) {
+  // M1停止, M2正转, M3正转, M4停止
+  setMotorsSeparate(0, speed, speed, 0);
+}
+
+// 右前楔形（45°右前方移动）
+void carMoveFrontRight(int speed = 180) {
+  // M1正转, M2停止, M3停止, M4正转
+  setMotorsSeparate(speed, 0, 0, speed);
+}
+
+// 左后楔形（45°左后方移动）
+void carMoveBackLeft(int speed = 180) {
+  // M1反转, M2停止, M3停止, M4反转
+  setMotorsSeparate(-speed, 0, 0, -speed);
+}
+
+// 右后楔形（45°右后方移动）
+void carMoveBackRight(int speed = 180) {
+  // M1停止, M2反转, M3反转, M4停止
+  setMotorsSeparate(0, -speed, -speed, 0);
+}
+```
+
+#### 麦克纳姆轮运动示意图
+
+```
+                前进
+                 ↑
+      左前楔形 ↗   ↖ 右前楔形
+               
+    左横移 ←    ●    → 右横移
+               
+      左后楔形 ↙   ↘ 右后楔形
+                 ↓
+                后退
+        
+        原地旋转: ↺ 左转  ↻ 右转
+```
+
+#### ⚠️ 麦克纳姆轮使用注意事项
+
+1. **轮子安装方向**：麦克纳姆轮有特定的安装方向，从俯视角度看，四个轮子的辊子应组成 "X" 形状
+2. **地面要求**：最好在平坦、硬质地面上使用，地毯等软质地面效果较差
+3. **速度匹配**：四个电机速度应尽量一致，否则会产生偏移
+4. **电池电量**：电量不足时电机速度不一致，会导致运动轨迹偏移
+5. **默认速度**：建议使用 180（70%功率），避免触发电池保护
+6. **方向切换**：切换运动方向前应先停止电机，避免堵转
+
+#### ⚠️ 麦克纳姆轮编程注意事项（重要！）
+
+**问题1：按键检测无响应**
+
+当使用 `delay()` 阻塞式等待时，按键检测只在每次循环开头执行一次，导致响应不灵敏。
+
+**❌ 错误写法**：
+```cpp
+void loop() {
+  checkButton();  // 按键只在这里检测一次
+  
+  carMoveLeft(180);
+  delay(1500);    // 阻塞 1.5 秒，期间按键无法响应！
+  carStop();
+  delay(300);
+  carMoveRight(180);
+  delay(1500);
+}
+```
+
+**✅ 正确写法（非阻塞状态机）**：
+```cpp
+enum MoveState { STATE_LEFT, STATE_STOP, STATE_RIGHT };
+MoveState currentState = STATE_LEFT;
+unsigned long stateStartTime = 0;
+const int MOVE_DURATION = 1500;
+const int STOP_DURATION = 300;
+
+void loop() {
+  // 1. 按键检测（每轮都执行，响应灵敏）
+  checkButton();
+  
+  // 2. 非阻塞状态机
+  unsigned long elapsed = millis() - stateStartTime;
+  
+  switch (currentState) {
+    case STATE_LEFT:
+      if (elapsed >= MOVE_DURATION) {
+        changeState(STATE_STOP);
+      }
+      break;
+    case STATE_STOP:
+      if (elapsed >= STOP_DURATION) {
+        changeState(goingRight ? STATE_RIGHT : STATE_LEFT);
+        goingRight = !goingRight;
+      }
+      break;
+    // ...
+  }
+  
+  delay(10);  // 短暂延时，不阻塞按键检测
+}
+```
+
+**问题2：电机堵转**
+
+快速切换方向时电机未完全停止，会导致堵转。
+
+**解决方案**：方向切换前先停止电机并短暂延时
+```cpp
+void changeState(MoveState newState) {
+  carStop();      // 先停止
+  delay(50);      // 短暂延时让电机完全停止
+  currentState = newState;
+  stateStartTime = millis();
+  executeState(newState);
 }
 ```
 
@@ -952,7 +1143,7 @@ void loop() {
 }
 ```
 
-**颜色识别示例**：
+**颜色识别示例（简单版，仅 RGB 三色）**：
 
 ```cpp
 String detectColor() {
@@ -978,6 +1169,93 @@ String detectColor() {
   }
 }
 ```
+
+### ⚠️ VEML6040 使用环境与校准说明（重要！）
+
+VEML6040 是一颗光谱型颜色传感器，对环境光非常敏感。**颜色识别的准确度高度依赖环境光条件**，使用时必须注意以下事项：
+
+#### 1. 使用环境要求
+
+| 条件 | 推荐 | 避免 |
+|------|------|------|
+| **光源** | 室内固定灯光（LED 灯、白炽灯） | ❌ 阳光直射、强光照射 |
+| **封闭性** | 传感器周围相对封闭，减少外部光干扰 | ❌ 开放空间、户外 |
+| **光线稳定性** | 光线恒定不变 | ❌ 光线频繁变化（人走动遮光、灯光闪烁） |
+| **物体距离** | 1~3cm 效果最佳 | ❌ 距离 > 5cm 信号太弱 |
+| **物体颜色** | 纯色、饱和度高的物体 | ❌ 混合色、浅色、白色 |
+
+#### 2. 环境光对传感器的影响
+
+VEML6040 读取的是 **环境光 + 物体反射光** 的混合信号。不同光源下，即使是同一个红色物体，传感器读到的 RGB 值完全不同：
+
+```
+日光灯(6000K)下:  R:1800  G:2100  B:1200  ← 绿色偏高，蓝色偏高
+暖白灯(3000K)下:  R:2500  G:1600  B:800   ← 红色偏高，蓝色偏低
+阳光直射下:       R:8000  G:9000  B:7000  ← 全部饱和，无法区分
+```
+
+**这就是为什么必须进行环境光校准！**
+
+#### 3. 自适应基线校准机制
+
+**原理**：开机时采集当前环境光下的 RGB 占比作为"无颜色"基准，后续通过检测 RGB 占比相对基准的偏离来判断颜色。
+
+**校准流程**：
+1. 开机后等待 1 秒让传感器稳定
+2. 采集 8 次 RGB 数据，计算各通道占比 (R/(R+G+B) 等)
+3. 取平均值作为环境光基线 `baseR, baseG, baseB`
+4. 校准完成后提示音 + LED 全灭
+
+**代码关键部分**：
+```cpp
+// 开机校准（在 setup() 中调用）
+void calibrateBaseline() {
+  float sumR = 0, sumG = 0, sumB = 0;
+  int validCount = 0;
+  
+  for (int i = 0; i < 8; i++) {
+    uint16_t r = colorSensor.getRed();
+    uint16_t g = colorSensor.getGreen();
+    uint16_t b = colorSensor.getBlue();
+    float total = (float)r + g + b;
+    sumR += (float)r / total;
+    sumG += (float)g / total;
+    sumB += (float)b / total;
+    validCount++;
+    delay(400);  // 等待积分周期
+  }
+  
+  baseR = sumR / validCount;  // 环境光 R 占比
+  baseG = sumG / validCount;  // 环境光 G 占比
+  baseB = sumB / validCount;  // 环境光 B 占比
+}
+
+// 颜色判断时，计算偏离基线的量
+float rDev = rr - baseR;  // > 0 表示红光比环境光多
+float gDev = gr - baseG;
+float bDev = br - baseB;
+float saturation = fabs(rDev) + fabs(gDev) + fabs(bDev);
+
+// saturation < 0.025 → 接近环境光，无明显颜色
+// saturation > 0.025 → 有彩色物体，根据偏离方向判断颜色
+```
+
+#### 4. 需要重新校准的场景
+
+| 场景 | 操作 |
+|------|------|
+| 开/关灯 | 按 RST 重启 |
+| 移到不同房间 | 按 RST 重启 |
+| 窗帘拉开/关上（自然光变化） | 按 RST 重启 |
+| 换了灯泡颜色/色温 | 按 RST 重启 |
+| 物体识别不准了 | 按 RST 重启 |
+
+#### 5. 最佳实践
+
+1. **传感器遮光罩**：用深色不透明材料在传感器周围做一个简易遮光罩（如黑色纸筒），减少侧面环境光干扰，可以显著提高识别准确率
+2. **固定测量距离**：保持物体与传感器距离恒定（建议 1~2cm），距离变化会影响信号强度
+3. **校准时清空传感器前方**：校准过程中传感器前方不要有任何彩色物体
+4. **使用饱和度高的物体**：纯红、纯蓝等高饱和度物体最容易识别；粉色、浅蓝等低饱和度颜色可能被忽略
 
 ---
 
@@ -1221,30 +1499,128 @@ if (d > 0) {  // ⚠️ 应该检查 d > 3
 | PS2_CLK | GPIO41 | 时钟信号 |
 | PS2_CS | GPIO42 | 片选信号 |
 
-**推荐库**：`PS2X_lib`（已适配 ESP32）
+**推荐库**：`PS2X_lib`（已适配 ESP32，需手动添加到项目 `lib/PS2X_lib/` 目录）
+
+### ⚠️ PS2 手柄编程关键要点（必读）
+
+**1. 必须使用硬件定时器中断读取手柄**
+
+PS2 手柄通信对时序要求严格。**不要在 `loop()` 中直接调用 `read_gamepad()`**，否则会导致：
+- 按键状态读取不稳定
+- 按键功能被摇杆覆盖
+- 响应延迟大
+
+**✅ 正确做法**：使用 `hw_timer_t` 硬件定时器，每 100ms 中断一次读取手柄：
+```cpp
+hw_timer_t *time_ps2 = NULL;
+
+void IRAM_ATTR func_ps2() {
+  ps2x.read_gamepad(false, 0);
+  // 在中断中处理按键和摇杆逻辑
+  // 将结果写入 motor_pwm[] 数组
+}
+
+void setup() {
+  // ... PS2 初始化成功后 ...
+  time_ps2 = timerBegin(1, 80, true);
+  timerAttachInterrupt(time_ps2, &func_ps2, true);
+  timerAlarmWrite(time_ps2, 100000, true);  // 100ms = 100000us
+  timerAlarmEnable(time_ps2);
+}
+```
+
+**2. 电机控制必须使用 8 通道 PWM 数组方式**
+
+不要使用 `setMotor(FWD, REV, speed)` 的高层封装，因为 GPIO 引脚编号和电机正反转的对应关系比较复杂。**正确方式是使用 8 元素的 `motor_pwm[]` 数组**，在中断中修改数组值，在 `loop()` 中输出到引脚：
+
+```cpp
+// 8个 PWM 通道对应 GPIO11~GPIO18
+int motor_pwm[8] = {0,0,0,0,0,0,0,0};
+// motor_pwm[0]=GPIO11(M1正), [1]=GPIO12(M1反),
+// motor_pwm[2]=GPIO13(M2反), [3]=GPIO14(M2正),
+// motor_pwm[4]=GPIO15(M3正), [5]=GPIO16(M3反),
+// motor_pwm[6]=GPIO17(M4反), [7]=GPIO18(M4正)
+
+// 电机映射表：[电机序号][正转索引, 反转索引]
+// 前左M1(0,1), 前右M2(3,2), 后左M3(4,5), 后右M4(7,6)
+int motor_pwm_num[4][2] = {{0,1}, {3,2}, {4,5}, {7,6}};
+
+void loop() {
+  // 在 loop 中输出 PWM 到引脚
+  analogWrite(M1_FWD, motor_pwm[0]);  // GPIO11
+  analogWrite(M1_REV, motor_pwm[1]);  // GPIO12
+  analogWrite(M2_REV, motor_pwm[2]);  // GPIO13 ← 注意是反转
+  analogWrite(M2_FWD, motor_pwm[3]);  // GPIO14 ← 注意是正转
+  analogWrite(M3_FWD, motor_pwm[4]);  // GPIO15
+  analogWrite(M3_REV, motor_pwm[5]);  // GPIO16
+  analogWrite(M4_REV, motor_pwm[6]);  // GPIO17 ← 注意是反转
+  analogWrite(M4_FWD, motor_pwm[7]);  // GPIO18 ← 注意是正转
+  delay(100);
+}
+```
+
+**3. 摇杆值映射使用速度等级表**
+
+不要直接将摇杆值 `map()` 到 0-255 PWM，应使用 9 档速度等级表：
+```cpp
+#define PWM_MAX 9
+int pwm_value[PWM_MAX] = {0, 150, 160, 170, 190, 210, 220, 230, 240};
+
+// 摇杆原始值(0~255) → 映射到 0~18（中间值 9）
+int value = map(ps2x.Analog(PSS_LY), 0, 255, 0, PWM_MAX * 2);
+// 然后用 pwm_value[偏移量] 查表得到实际 PWM 值
+```
+
+**4. 按键优先级高于摇杆**
+
+在定时器中断回调中，先检测按键，如果有按键按下则直接 `return`，不再处理摇杆。这样避免按键效果被摇杆覆盖。
 
 ### 📌 PlatformIO 库配置
 
-在 `platformio.ini` 中添加 PS2X 库（需要手动添加到 lib 目录）：
-
 ```ini
-lib_deps = 
-    ; PS2X_lib 需要手动添加，或使用本地库
+[env:seeed_xiao_esp32s3]
+platform = espressif32
+board = seeed_xiao_esp32s3
+framework = arduino
+monitor_speed = 115200
+
+; PS2X_lib 需要手动放到项目 lib/PS2X_lib/ 目录下
+; 库文件来源：references/libraries/PS2X_lib/
 ```
 
-### 📌 PS2 手柄控制小车完整示例
+### 📌 PS2 手柄遥控麦克纳姆轮小车完整示例
+
+**操控映射**：
+
+| 操控 | 功能 | 说明 |
+|------|------|------|
+| 左摇杆 Y | 前进/后退 | 带差速转向 |
+| 左摇杆 X | 差速转向 | 前进时偏转 |
+| 右摇杆 Y | 原地旋转 | 上推逆时针，下推顺时针 |
+| 右摇杆 X | 左右横移 | 麦克纳姆轮特有 |
+| △ 三角 | 全速前进 | 按住生效 |
+| × 叉叉 | 全速后退 | 按住生效 |
+| □ 方块 | 左横移 | 按住生效 |
+| ○ 圆圈 | 右横移 | 按住生效 |
+| L1 | 原地左旋 | 按住生效 |
+| R1 | 原地右旋 | 按住生效 |
+| L2 | 左前斜移 | 按住生效 |
+| R2 | 右前斜移 | 按住生效 |
+| 十字键 ↑↓ | 前进/后退 | 固定速度 |
+| 十字键 ←→ | 原地左/右转 | 固定速度 |
+| START | 急停 | 立即停止所有电机 |
 
 ```cpp
 #include <Arduino.h>
 #include "PS2X_lib.h"
 
-// PS2 手柄引脚
+// ==================== PS2 手柄引脚 ====================
 #define PS2_CLK 41
 #define PS2_CMD 9
 #define PS2_CS  42
 #define PS2_DAT 10
 
-// 电机引脚
+// ==================== 电机引脚 ====================
 #define M1_FWD 11
 #define M1_REV 12
 #define M2_FWD 14
@@ -1254,115 +1630,215 @@ lib_deps =
 #define M4_FWD 18
 #define M4_REV 17
 
+// ==================== 蜂鸣器 ====================
+#define BUZZER_PIN 26
+
+// ==================== PS2 手柄对象 ====================
 PS2X ps2x;
-int error = 1;
+int ps2Error = 1;
 
-// 电机速度等级映射表
-const int PWM_LEVELS = 9;
-int pwmValues[PWM_LEVELS] = {0, 150, 160, 170, 190, 210, 220, 230, 240};
+// ==================== 电机速度配置 ====================
+#define PWM_MAX 9
+int pwm_value[PWM_MAX] = {0, 150, 160, 170, 190, 210, 220, 230, 240};
 
-void setMotor(int fwdPin, int revPin, int speed) {
-  speed = constrain(speed, -255, 255);
-  if (speed > 0) {
-    analogWrite(fwdPin, speed);
-    analogWrite(revPin, 0);
-  } else if (speed < 0) {
-    analogWrite(fwdPin, 0);
-    analogWrite(revPin, -speed);
-  } else {
-    analogWrite(fwdPin, 0);
-    analogWrite(revPin, 0);
+// 8个电机 PWM 输出值
+// motor_pwm[0]=M1正转(GPIO11), [1]=M1反转(GPIO12),
+// motor_pwm[2]=M2反转(GPIO13), [3]=M2正转(GPIO14),
+// motor_pwm[4]=M3正转(GPIO15), [5]=M3反转(GPIO16),
+// motor_pwm[6]=M4反转(GPIO17), [7]=M4正转(GPIO18)
+int motor_pwm[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+
+// 电机映射：[电机序号][正转索引, 反转索引]
+// 前左M1(0,1), 前右M2(3,2), 后左M3(4,5), 后右M4(7,6)
+int motor_pwm_num[4][2] = {{0,1}, {3,2}, {4,5}, {7,6}};
+
+const int DEADZONE = 4;
+hw_timer_t *time_ps2 = NULL;
+
+void carStop() {
+  for (int i = 0; i < 8; i++) motor_pwm[i] = 0;
+}
+
+// ==================== 左摇杆控制（前后+差速转向）====================
+void motor_change(int lx_value, int ly_value) {
+  for (int i = 0; i < 4; i++) {
+    int pwm_num0 = motor_pwm_num[i][0];
+    int pwm_num1 = motor_pwm_num[i][1];
+    if (ly_value > PWM_MAX + 1) {
+      // 后退
+      motor_pwm[pwm_num0] = 0;
+      motor_pwm[pwm_num1] = pwm_value[ly_value - PWM_MAX - 1];
+      if (lx_value > PWM_MAX) {
+        if (i % 2) motor_pwm[pwm_num1] -= (lx_value - PWM_MAX - 1) * 4;
+      } else if (lx_value < PWM_MAX) {
+        if (!(i % 2)) motor_pwm[pwm_num1] -= (PWM_MAX - lx_value) * 4;
+      }
+    } else if (ly_value < PWM_MAX) {
+      // 前进
+      motor_pwm[pwm_num0] = 0;
+      motor_pwm[pwm_num1] = 0;
+      if (lx_value > PWM_MAX) {
+        if (i == 2) motor_pwm[pwm_num1] = pwm_value[lx_value - PWM_MAX - 1];
+        else if (i == 3) motor_pwm[pwm_num0] = pwm_value[lx_value - PWM_MAX - 1];
+      } else if (lx_value < PWM_MAX) {
+        if (i == 2) motor_pwm[pwm_num0] = pwm_value[PWM_MAX - lx_value - 2];
+        else if (i == 3) motor_pwm[pwm_num1] = pwm_value[PWM_MAX - lx_value - 2];
+      } else {
+        motor_pwm[pwm_num0] = pwm_value[PWM_MAX - ly_value - 1];
+        motor_pwm[pwm_num1] = 0;
+        if (lx_value > PWM_MAX) {
+          if (i % 2) motor_pwm[pwm_num0] -= (lx_value - PWM_MAX - 1) * 4;
+        } else if (lx_value < PWM_MAX) {
+          if (!(i % 2)) motor_pwm[pwm_num0] -= (PWM_MAX - lx_value) * 4;
+        }
+      }
+    } else {
+      motor_pwm[pwm_num0] = 0;
+      motor_pwm[pwm_num1] = 0;
+    }
   }
 }
 
-void setMotors(int leftSpeed, int rightSpeed) {
-  setMotor(M1_FWD, M1_REV, leftSpeed);
-  setMotor(M2_FWD, M2_REV, rightSpeed);
-  setMotor(M3_FWD, M3_REV, leftSpeed);
-  setMotor(M4_FWD, M4_REV, rightSpeed);
+// ==================== 右摇杆控制（原地旋转+横移）====================
+void motor_change1(int rx_value, int ry_value) {
+  for (int i = 0; i < 4; i++) {
+    int pwm_num0 = motor_pwm_num[i][0];
+    int pwm_num1 = motor_pwm_num[i][1];
+    if (ry_value > PWM_MAX + 1) {
+      if (i % 2) { motor_pwm[pwm_num1] = pwm_value[ry_value - PWM_MAX - 1]; motor_pwm[pwm_num0] = 0; }
+      else { motor_pwm[pwm_num0] = pwm_value[ry_value - PWM_MAX - 1]; motor_pwm[pwm_num1] = 0; }
+    } else if (ry_value < PWM_MAX - 1) {
+      if (i % 2) { motor_pwm[pwm_num0] = pwm_value[PWM_MAX - ry_value - 1]; motor_pwm[pwm_num1] = 0; }
+      else { motor_pwm[pwm_num1] = pwm_value[PWM_MAX - ry_value - 1]; motor_pwm[pwm_num0] = 0; }
+    } else {
+      if (rx_value > PWM_MAX) {
+        if (i == 0 || i == 3) { motor_pwm[pwm_num0] = pwm_value[rx_value - PWM_MAX - 1]; motor_pwm[pwm_num1] = 0; }
+        else { motor_pwm[pwm_num0] = 0; motor_pwm[pwm_num1] = pwm_value[rx_value - PWM_MAX - 1]; }
+      } else if (rx_value < PWM_MAX) {
+        if (i == 0 || i == 3) { motor_pwm[pwm_num1] = pwm_value[PWM_MAX - rx_value - 1]; motor_pwm[pwm_num0] = 0; }
+        else { motor_pwm[pwm_num1] = 0; motor_pwm[pwm_num0] = pwm_value[PWM_MAX - rx_value - 1]; }
+      } else { motor_pwm[pwm_num0] = 0; motor_pwm[pwm_num1] = 0; }
+    }
+  }
+}
+
+// ==================== PS2 定时器中断回调 ====================
+void IRAM_ATTR func_ps2() {
+  ps2x.read_gamepad(false, 0);
+
+  int ly_value = map(ps2x.Analog(PSS_LY), 0, 255, 0, PWM_MAX * 2);
+  int lx_value = map(ps2x.Analog(PSS_LX), 0, 255, 0, PWM_MAX * 2);
+  int ry_value = map(ps2x.Analog(PSS_RY), 0, 255, 0, PWM_MAX * 2);
+  int rx_value = map(ps2x.Analog(PSS_RX), 0, 255, 0, PWM_MAX * 2);
+
+  // ===== 按键优先（按住生效，直接 return）=====
+  if (ps2x.ButtonPressed(PSB_START)) { carStop(); return; }
+
+  if (ps2x.Button(PSB_GREEN)) {  // △ 全速前进
+    for (int i = 0; i < 4; i++) { motor_pwm[motor_pwm_num[i][0]] = pwm_value[PWM_MAX-1]; motor_pwm[motor_pwm_num[i][1]] = 0; }
+    return;
+  }
+  if (ps2x.Button(PSB_BLUE)) {  // × 全速后退
+    for (int i = 0; i < 4; i++) { motor_pwm[motor_pwm_num[i][0]] = 0; motor_pwm[motor_pwm_num[i][1]] = pwm_value[PWM_MAX-1]; }
+    return;
+  }
+  if (ps2x.Button(PSB_PINK)) {  // □ 左横移
+    int spd = pwm_value[6];
+    motor_pwm[motor_pwm_num[0][0]]=0;   motor_pwm[motor_pwm_num[0][1]]=spd;
+    motor_pwm[motor_pwm_num[1][0]]=spd; motor_pwm[motor_pwm_num[1][1]]=0;
+    motor_pwm[motor_pwm_num[2][0]]=spd; motor_pwm[motor_pwm_num[2][1]]=0;
+    motor_pwm[motor_pwm_num[3][0]]=0;   motor_pwm[motor_pwm_num[3][1]]=spd;
+    return;
+  }
+  if (ps2x.Button(PSB_RED)) {  // ○ 右横移
+    int spd = pwm_value[6];
+    motor_pwm[motor_pwm_num[0][0]]=spd; motor_pwm[motor_pwm_num[0][1]]=0;
+    motor_pwm[motor_pwm_num[1][0]]=0;   motor_pwm[motor_pwm_num[1][1]]=spd;
+    motor_pwm[motor_pwm_num[2][0]]=0;   motor_pwm[motor_pwm_num[2][1]]=spd;
+    motor_pwm[motor_pwm_num[3][0]]=spd; motor_pwm[motor_pwm_num[3][1]]=0;
+    return;
+  }
+  // L1/R1/L2/R2/十字键...（类似逻辑，此处省略，完整代码见项目 ps2_car_control/）
+
+  // ===== 摇杆控制（按键都没按时才执行）=====
+  if (abs(ly_value - PWM_MAX) <= DEADZONE && abs(lx_value - PWM_MAX) <= DEADZONE &&
+      abs(ry_value - PWM_MAX) <= DEADZONE && abs(rx_value - PWM_MAX) <= DEADZONE) {
+    carStop();
+  } else {
+    if ((ry_value >= PWM_MAX - 1) && (ry_value <= PWM_MAX + 1) &&
+        (rx_value >= PWM_MAX - 1) && (rx_value <= PWM_MAX + 1)) {
+      motor_change(lx_value, ly_value);  // 左摇杆
+    } else {
+      motor_change1(rx_value, ry_value); // 右摇杆
+    }
+  }
 }
 
 void setup() {
   Serial.begin(115200);
-  
-  // 初始化电机引脚
+  delay(2000);
+
   pinMode(M1_FWD, OUTPUT); pinMode(M1_REV, OUTPUT);
   pinMode(M2_FWD, OUTPUT); pinMode(M2_REV, OUTPUT);
   pinMode(M3_FWD, OUTPUT); pinMode(M3_REV, OUTPUT);
   pinMode(M4_FWD, OUTPUT); pinMode(M4_REV, OUTPUT);
   analogWriteFrequency(10000);
-  
-  // 初始化 PS2 手柄（重试3次）
+  carStop();
+  pinMode(BUZZER_PIN, OUTPUT);
+
   int tryNum = 0;
-  while (error != 0 && tryNum < 3) {
+  while (ps2Error != 0 && tryNum < 3) {
     delay(1000);
-    error = ps2x.config_gamepad(PS2_CLK, PS2_CMD, PS2_CS, PS2_DAT, false, false);
-    Serial.print("PS2 初始化尝试 ");
-    Serial.println(++tryNum);
+    ps2Error = ps2x.config_gamepad(PS2_CLK, PS2_CMD, PS2_CS, PS2_DAT, false, false);
+    tryNum++;
   }
-  
-  if (error == 0) {
+
+  if (ps2Error == 0) {
     Serial.println("PS2 手柄连接成功!");
-  } else {
-    Serial.println("PS2 手柄连接失败!");
+    tone(BUZZER_PIN, 1000, 100); delay(150); tone(BUZZER_PIN, 1500, 100);
+    // ⭐ 关键：启动硬件定时器中断
+    time_ps2 = timerBegin(1, 80, true);
+    timerAttachInterrupt(time_ps2, &func_ps2, true);
+    timerAlarmWrite(time_ps2, 100000, true);  // 100ms
+    timerAlarmEnable(time_ps2);
   }
 }
 
 void loop() {
-  if (error != 0) {
-    delay(1000);
-    return;
-  }
-  
-  ps2x.read_gamepad(false, 0);  // 读取手柄状态
-  
-  // 获取左摇杆值（0-255，中间值约128）
-  int ly = ps2x.Analog(PSS_LY);  // 上下（上=0，下=255）
-  int lx = ps2x.Analog(PSS_LX);  // 左右（左=0，右=255）
-  
-  // 转换为速度值（-255 到 255）
-  int forward = map(ly, 0, 255, 255, -255);  // 前进后退
-  int turn = map(lx, 0, 255, -200, 200);     // 左右转向
-  
-  // 死区处理（摇杆回中附近不动作）
-  if (abs(forward) < 20) forward = 0;
-  if (abs(turn) < 20) turn = 0;
-  
-  // 计算左右电机速度
-  int leftSpeed = forward + turn;
-  int rightSpeed = forward - turn;
-  
-  // 限幅
-  leftSpeed = constrain(leftSpeed, -255, 255);
-  rightSpeed = constrain(rightSpeed, -255, 255);
-  
-  setMotors(leftSpeed, rightSpeed);
-  
-  // 按键检测示例
-  if (ps2x.ButtonPressed(PSB_CROSS)) {    // X 按下
-    Serial.println("X 键按下");
-  }
-  if (ps2x.ButtonPressed(PSB_CIRCLE)) {   // ○ 按下
-    Serial.println("○ 键按下");
-  }
-  if (ps2x.ButtonPressed(PSB_TRIANGLE)) { // △ 按下
-    Serial.println("△ 键按下");
-  }
-  if (ps2x.ButtonPressed(PSB_SQUARE)) {   // □ 按下
-    Serial.println("□ 键按下");
-  }
-  
-  // L1/R1 肩键
-  if (ps2x.Button(PSB_L1)) {
-    Serial.println("L1 按住");
-  }
-  if (ps2x.Button(PSB_R1)) {
-    Serial.println("R1 按住");
-  }
-  
-  delay(50);
+  if (ps2Error != 0) { delay(1000); return; }
+
+  // ⭐ 关键：loop 只负责输出 motor_pwm 数组到引脚
+  analogWrite(M1_FWD, motor_pwm[0]);  // GPIO11 M1正转
+  analogWrite(M1_REV, motor_pwm[1]);  // GPIO12 M1反转
+  analogWrite(M2_REV, motor_pwm[2]);  // GPIO13 M2反转
+  analogWrite(M2_FWD, motor_pwm[3]);  // GPIO14 M2正转
+  analogWrite(M3_FWD, motor_pwm[4]);  // GPIO15 M3正转
+  analogWrite(M3_REV, motor_pwm[5]);  // GPIO16 M3反转
+  analogWrite(M4_REV, motor_pwm[6]);  // GPIO17 M4反转
+  analogWrite(M4_FWD, motor_pwm[7]);  // GPIO18 M4正转
+  delay(100);
 }
 ```
+
+### ⚠️ PS2 手柄常见问题
+
+**问题1：只有摇杆有反应，按键无效果**
+
+**根因**：在 `loop()` 中直接调用 `read_gamepad()` + 按键检测，按键状态被摇杆逻辑覆盖。
+
+**解决方案**：改用硬件定时器中断方式，在中断回调中按键优先处理（先检测按键，有则 return，不执行摇杆逻辑）。
+
+**问题2：左右摇杆行为一致（都是前后左右转）**
+
+**根因**：两个摇杆共用了同一套电机控制逻辑。
+
+**解决方案**：左摇杆用 `motor_change()`（前后+差速转向），右摇杆用 `motor_change1()`（原地旋转+横移），两套独立算法。
+
+**问题3：电机方向不对**
+
+**根因**：GPIO 引脚编号和电机正反转的映射关系复杂，M2 和 M4 的正反转 GPIO 顺序与 M1、M3 相反。
+
+**解决方案**：使用 `motor_pwm_num[4][2]` 映射表和 `motor_pwm[8]` 数组，不要用简单的 `setMotor(FWD, REV, speed)` 封装。
 
 ### PS2 按键常量
 
@@ -1457,6 +1933,287 @@ GPIO48 - 舵机S2
 
 ---
 
+## WiFi 无线通信
+
+ESP32-S3 内置 WiFi 802.11 b/g/n 模块，可用于网页遥控、数据传输等无线通信场景。
+
+| 参数 | 值 |
+|------|-----|
+| WiFi 标准 | 802.11 b/g/n |
+| 频段 | 2.4 GHz |
+| 模式 | STA（连接路由器）/ AP（创建热点）/ STA+AP |
+| 天线 | 板载天线 |
+
+### 支持的工作模式
+
+| 模式 | 说明 | 使用场景 |
+|------|------|----------|
+| **STA 模式** | 连接已有的 WiFi 路由器 | ⭐ 推荐。小车与电脑在同一网络，电脑可正常上网 |
+| **AP 模式** | ESP32 自己创建 WiFi 热点 | 无路由器时使用。电脑需连接小车热点，连接后断网 |
+| **STA+AP** | 同时连接路由器和创建热点 | 高级场景，一般不使用 |
+
+### WiFi 相关库
+
+| 库名称 | 用途 | 说明 |
+|--------|------|------|
+| `WiFi.h` | WiFi 连接管理 | Arduino ESP32 内置，无需额外安装 |
+| `ESPAsyncWebServer` | 异步 Web 服务器 | 需在 lib_deps 中添加 |
+| `AsyncTCP` | 异步 TCP（WebSocket 依赖） | 需在 lib_deps 中添加 |
+
+### PlatformIO 库配置
+
+```ini
+lib_deps = 
+    ESP Async WebServer
+    AsyncTCP
+```
+
+### 📌 WiFi STA 模式连接示例
+
+```cpp
+#include <WiFi.h>
+
+const char* ssid = "WiFi名称";
+const char* password = "WiFi密码";
+
+void setup() {
+  Serial.begin(115200);
+  delay(2000);
+  
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  
+  Serial.print("正在连接 WiFi");
+  int retries = 0;
+  while (WiFi.status() != WL_CONNECTED && retries < 30) {
+    delay(500);
+    Serial.print(".");
+    retries++;
+  }
+  
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\n✅ WiFi 已连接!");
+    Serial.print("IP 地址: ");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("\n❌ WiFi 连接失败!");
+  }
+}
+
+void loop() {
+  // ...
+}
+```
+
+### 📌 WiFi AP 模式热点示例
+
+```cpp
+#include <WiFi.h>
+
+void setup() {
+  Serial.begin(115200);
+  delay(2000);
+  
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP("FutureCar_Control", "12345678");
+  
+  Serial.println("📡 热点已创建!");
+  Serial.print("热点 IP: ");
+  Serial.println(WiFi.softAPIP());  // 默认 192.168.4.1
+}
+
+void loop() {
+  // ...
+}
+```
+
+### ⚠️ WiFi 使用注意事项
+
+1. **WiFi 不占用额外 GPIO**：使用 ESP32-S3 内置射频模块，不影响其他引脚使用
+2. **STA 模式优先**：有路由器时优先使用 STA 模式，用户体验更好
+3. **连接超时处理**：STA 模式建议设置 15 秒超时，超时后可回退到 AP 模式
+4. **功耗**：WiFi 开启时功耗增加，电池供电场景需注意续航
+5. **与其他功能兼容**：WiFi 可与电机控制、LED、传感器等同时使用，互不干扰
+
+---
+
+## FreeRTOS 多任务编程（高级）
+
+ESP32-S3 是**双核处理器**（Core 0 + Core 1），内置 FreeRTOS 实时操作系统。当需要多个传感器**同时并行工作**时（如循迹 + 颜色识别 + 超声波避障），可以使用 FreeRTOS 多任务来充分利用双核性能。
+
+### 📌 什么时候需要多任务？
+
+| 场景 | 是否需要多任务 | 说明 |
+|------|:---:|------|
+| 单个传感器 + 电机 | ❌ | `loop()` + `millis()` 即可 |
+| LED 矩阵 + 按键 | ❌ | 非阻塞扫描足够 |
+| 循迹 + 超声波 | ⚠️ 可选 | 非阻塞 `millis()` 通常也能胜任 |
+| 循迹 + 颜色识别 + 超声波 + 舵机 | ✅ 推荐 | 多传感器并行读取，避免互相阻塞 |
+| WiFi Web 遥控 + 多传感器 | ✅ 推荐 | WiFi 处理 + 传感器读取分核运行 |
+
+### 📌 核心分配建议
+
+```
+Core 0: 传感器读取任务（颜色传感器、超声波、加速度计等）
+Core 1: 主任务（电机控制、循迹逻辑、WiFi/WebSocket）← Arduino loop() 默认运行在 Core 1
+```
+
+> **注意**：Arduino 的 `setup()` 和 `loop()` 默认运行在 **Core 1**。将耗时的传感器读取放到 **Core 0**，可以避免影响主控制逻辑。
+
+### 📌 基本用法：`xTaskCreatePinnedToCore()`
+
+```cpp
+#include <Arduino.h>
+
+// ============ 共享变量（需要 volatile） ============
+volatile float g_distance_cm = 0;    // 超声波距离
+volatile uint16_t g_color_red = 0;   // 颜色传感器 - 红色通道
+volatile uint16_t g_color_green = 0; // 颜色传感器 - 绿色通道
+volatile uint16_t g_color_blue = 0;  // 颜色传感器 - 蓝色通道
+
+// ============ 传感器任务（运行在 Core 0） ============
+void sensorTask(void* parameter) {
+  // 在任务内部初始化传感器
+  Wire.begin(39, 40);  // I2C 初始化
+  // ... 初始化超声波、颜色传感器等 ...
+
+  for (;;) {  // 无限循环（FreeRTOS 任务不能退出）
+    // 读取超声波
+    // ... pulseIn() 或 Ultrasonic 库 ...
+    g_distance_cm = measuredDistance;
+
+    // 读取颜色传感器
+    // ... VEML6040 读取 ...
+    g_color_red = redValue;
+    g_color_green = greenValue;
+    g_color_blue = blueValue;
+
+    vTaskDelay(pdMS_TO_TICKS(50));  // 50ms 间隔，用 vTaskDelay 替代 delay()
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  
+  // 创建传感器任务，固定到 Core 0
+  xTaskCreatePinnedToCore(
+    sensorTask,     // 任务函数
+    "SensorTask",   // 任务名称（仅调试用）
+    4096,           // 栈大小（字节），传感器任务建议 4096
+    NULL,           // 传给任务函数的参数
+    1,              // 优先级（1=低，越大越高）
+    NULL,           // 任务句柄（不需要可填 NULL）
+    0               // 运行核心：0 = Core 0
+  );
+
+  // ... 其他初始化（电机、LED 等）...
+}
+
+void loop() {
+  // 主控制逻辑（运行在 Core 1）
+  // 直接读取共享变量
+  float dist = g_distance_cm;
+  
+  if (dist < 15.0) {
+    // 避障逻辑
+    carStop();
+  } else {
+    // 正常行驶
+    carForward(180);
+  }
+
+  delay(20);  // 主循环周期
+}
+```
+
+### 📌 参数说明
+
+| 参数 | 推荐值 | 说明 |
+|------|--------|------|
+| 栈大小 | `4096` | 使用 I2C/传感器时建议 4096 字节；简单任务可用 2048 |
+| 优先级 | `1` | 传感器任务用 1（低），电机控制任务可用 2（较高） |
+| 核心 | `0` | 传感器放 Core 0，主逻辑留 Core 1 |
+
+### 📌 多任务综合示例：循迹 + 颜色识别 + 超声波
+
+```cpp
+// 任务 1：颜色传感器读取（Core 0）
+void colorTask(void* param) {
+  VEML6040 colorSensor;
+  Wire.begin(39, 40);
+  colorSensor.begin();
+  
+  for (;;) {
+    g_color_red = colorSensor.getRed();
+    g_color_green = colorSensor.getGreen();
+    g_color_blue = colorSensor.getBlue();
+    vTaskDelay(pdMS_TO_TICKS(100));  // 颜色传感器 100ms 读取间隔
+  }
+}
+
+// 任务 2：超声波测距（Core 0）
+void ultrasonicTask(void* param) {
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+  
+  for (;;) {
+    digitalWrite(TRIG_PIN, LOW);
+    delayMicroseconds(2);
+    digitalWrite(TRIG_PIN, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(TRIG_PIN, LOW);
+    
+    long duration = pulseIn(ECHO_PIN, HIGH, 30000);
+    g_distance_cm = duration * 0.034 / 2.0;
+    
+    vTaskDelay(pdMS_TO_TICKS(80));  // 超声波 80ms 读取间隔
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  
+  // 创建传感器任务到 Core 0
+  xTaskCreatePinnedToCore(colorTask, "Color", 4096, NULL, 1, NULL, 0);
+  xTaskCreatePinnedToCore(ultrasonicTask, "Ultra", 2048, NULL, 1, NULL, 0);
+  
+  // 电机和循迹初始化（主核心 Core 1）
+  // ... 初始化电机引脚、循迹传感器引脚 ...
+}
+
+void loop() {
+  // 主循环：循迹 + 避障决策（Core 1）
+  float dist = g_distance_cm;
+  
+  if (dist > 0 && dist < 15.0) {
+    carStop();  // 前方有障碍物
+  } else {
+    // 正常循迹逻辑
+    int leftSensor = digitalRead(LINE_LEFT);
+    int rightSensor = digitalRead(LINE_RIGHT);
+    // ... 循迹控制 ...
+  }
+  
+  // 根据颜色做出反应
+  if (g_color_red > g_color_green && g_color_red > g_color_blue) {
+    // 检测到红色，执行特定动作
+  }
+  
+  delay(20);
+}
+```
+
+### ⚠️ FreeRTOS 多任务注意事项
+
+1. **用 `vTaskDelay()` 替代 `delay()`**：`delay()` 会阻塞整个核心，`vTaskDelay()` 只暂停当前任务，让其他任务可以运行
+2. **共享变量用 `volatile`**：跨任务访问的变量必须声明为 `volatile`，防止编译器优化导致读取到旧值
+3. **I2C 不是线程安全的**：如果多个任务都要用 I2C，要么放在同一个任务里，要么使用互斥锁（`SemaphoreHandle_t`）
+4. **任务不能退出**：FreeRTOS 任务函数必须包含无限循环 `for(;;){}`，退出会导致崩溃
+5. **栈溢出风险**：栈太小会导致随机崩溃。使用 I2C/传感器库时建议至少 4096 字节
+6. **简单场景不要用多任务**：如果用 `millis()` 非阻塞编程就能满足需求，就不要引入多任务，避免不必要的复杂性
+
+---
+
 ## 代码生成约束
 
 在生成代码时需要注意以下约束：
@@ -1495,6 +2252,19 @@ GPIO48 - 舵机S2
 11. **舵机控制**：
     - 使用软件 PWM 定时器中断实现
     - 角度范围 0-180°，PWM 值范围约 4-13
+12. **WiFi 无线通信**：
+    - 优先使用 STA 模式（连接路由器），需要用户提供 WiFi 名称和密码
+    - 无路由器时使用 AP 模式（创建热点 `FutureCar_XXXX`，密码 `12345678`）
+    - STA 模式连接超时 15 秒后自动回退到 AP 模式
+    - Web 遥控使用 `ESPAsyncWebServer` + `AsyncTCP` 库
+    - WebSocket 断开时必须自动停车（安全保护）
+    - HTML 页面使用 `PROGMEM` 存储在 Flash 中
+13. **FreeRTOS 多任务**：
+    - 仅在多传感器并行场景（≥3 个传感器同时工作）才使用多任务
+    - 传感器读取任务放 Core 0，主控制逻辑留 Core 1
+    - 用 `vTaskDelay()` 替代 `delay()`，共享变量用 `volatile`
+    - I2C 操作集中在同一个任务中，避免线程安全问题
+    - 简单场景优先使用 `millis()` 非阻塞编程
 
 ---
 

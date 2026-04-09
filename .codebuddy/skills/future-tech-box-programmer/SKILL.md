@@ -233,9 +233,35 @@ RAM 使用：xxx KB (占用 xx%)
 >
 > **不需要**在烧录前弹出确认框让用户点击。直接进行烧录，过程中提醒用户，如果失败再让用户确认重启后继续。
 
+> 🚨 **关键经验：必须显式指定串口端口**
+>
+> **XIAO ESP32S3 使用 USB-Serial/JTAG 模式**，PlatformIO 的自动端口检测在此模式下**不可靠**，
+> 可能出现：自动选错端口、检测超时、烧录看似成功但实际未写入等问题。
+>
+> **强制要求**：烧录命令**必须**使用 `--upload-port` 显式指定串口：
+> ```bash
+> # ✅ 正确写法：显式指定端口
+> pio run -t upload --upload-port COM11
+>
+> # ❌ 错误写法：依赖自动检测
+> pio run -t upload
+> ```
+>
+> **端口获取方式**：在烧录前先运行 `pio device list` 获取当前连接的端口号。
+
 #### 3.1 烧录执行策略
 
-**主烧录命令**：`pio run -t upload -d <project_path>`
+**主烧录命令**：`pio run -t upload --upload-port <PORT> -d <project_path>`
+
+**⚠️ 烧录前必须先获取端口**：
+```bash
+# Step 1: 获取端口号
+pio device list
+# 找到 VID:PID=303A:1001 的设备，记录端口号（如 COM11）
+
+# Step 2: 使用获取到的端口号烧录
+pio run -t upload --upload-port COM11
+```
 
 **烧录开始时显示**（仅作提醒，不需要等待用户确认）：
 ```
@@ -344,6 +370,8 @@ python %USERPROFILE%\.platformio\packages\tool-esptoolpy\esptool.py ^
 | **I2C 加速度计** | ✅ | "检测倾斜方向" |
 | **I2C 颜色传感器** | ✅ | "识别颜色" |
 | **I2C 温湿度** | ✅ | "读取当前温度" |
+| **WiFi Web 遥控** | ✅ | "用电脑/手机网页控制小车" |
+| **FreeRTOS 多任务** | ✅ | "同时循迹+颜色识别+超声波避障" |
 
 ✅ = 已支持
 
@@ -384,10 +412,61 @@ void setMotors(int leftSpeed, int rightSpeed) {
   setMotor(M4_FWD, M4_REV, rightSpeed);
 }
 
-// 前进: setMotors(180, 180);
+// 前进: setMotors(180, 180);  // 默认 70% 功率
 // 后退: setMotors(-180, -180);
-// 左转: setMotors(-150, 150);
-// 右转: setMotors(150, -150);
+// 左转: setMotors(-180, 180);
+// 右转: setMotors(180, -180);
+```
+
+### 麦克纳姆轮全向移动
+
+如果小车使用麦克纳姆轮，可以实现横移和斜向移动：
+
+| 方向 | M1(左上) | M2(右上) | M3(左下) | M4(右下) |
+|------|----------|----------|----------|----------|
+| 前进 | 正 | 正 | 正 | 正 |
+| 后退 | 反 | 反 | 反 | 反 |
+| **左横移** | **反** | **正** | **正** | **反** |
+| **右横移** | **正** | **反** | **反** | **正** |
+| 左前楔形 | 停 | 正 | 正 | 停 |
+| 右前楔形 | 正 | 停 | 停 | 正 |
+| 左后楔形 | 反 | 停 | 停 | 反 |
+| 右后楔形 | 停 | 反 | 反 | 停 |
+| 原地左转 | 反 | 正 | 反 | 正 |
+| 原地右转 | 正 | 反 | 正 | 反 |
+
+**麦克纳姆轮控制代码**：
+```cpp
+// ⚠️ 默认速度建议 180（70%功率），避免触发电池保护
+const int MOTOR_SPEED = 180;
+
+// 设置四个电机独立速度
+void setMotorsSeparate(int m1, int m2, int m3, int m4) {
+  setMotor(M1_FWD, M1_REV, m1);
+  setMotor(M2_FWD, M2_REV, m2);
+  setMotor(M3_FWD, M3_REV, m3);
+  setMotor(M4_FWD, M4_REV, m4);
+}
+
+// 左横移
+void carMoveLeft(int speed = MOTOR_SPEED) {
+  setMotorsSeparate(-speed, speed, speed, -speed);
+}
+
+// 右横移
+void carMoveRight(int speed = MOTOR_SPEED) {
+  setMotorsSeparate(speed, -speed, -speed, speed);
+}
+
+// 左前楔形
+void carMoveFrontLeft(int speed = MOTOR_SPEED) {
+  setMotorsSeparate(0, speed, speed, 0);
+}
+
+// 右前楔形
+void carMoveFrontRight(int speed = MOTOR_SPEED) {
+  setMotorsSeparate(speed, 0, 0, speed);
+}
 ```
 
 ### I²C 传感器接口
@@ -402,6 +481,84 @@ void setMotors(int leftSpeed, int rightSpeed) {
 ```cpp
 #include <Wire.h>
 Wire.begin(39, 40);  // SDA=GPIO39, SCL=GPIO40
+```
+
+### 🔴 VEML6040 颜色传感器使用注意事项（重要！必须告知用户）
+
+**当用户使用颜色传感器时，SKILL 必须在烧录成功后向用户显示以下提示：**
+
+```
+⚠️ 颜色传感器使用注意事项
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📌 使用环境要求：
+  1. 请在相对封闭、光线稳定的环境下使用颜色传感器
+  2. 避免强光直射（日光灯直射、阳光照射等）
+  3. 避免光线频繁变化的场所（如灯光闪烁、有人走动遮光）
+
+📌 校准说明：
+  • 开机后前几秒 LED 全亮 = 正在自动校准环境光基线
+  • 校准时请确保传感器前方没有放置彩色物体
+  • 校准完成后会有两声提示音
+
+📌 重要提示：
+  • 如果更换了使用环境（开/关灯、移到不同房间），
+    请按 RST 按钮重新启动以重新校准
+  • 颜色识别准确度取决于校准时的环境光是否稳定
+  • 将彩色物体尽量靠近传感器（1-3cm 距离最佳）
+  • 物体表面最好是纯色，混合色可能识别不准确
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+**VEML6040 识别原理与限制（SKILL 内部参考，不必直接展示给用户）**：
+
+1. **自适应基线校准**：程序开机时采集 8 次环境光 RGB 占比求平均，作为"无颜色"的基准参考
+2. **相对偏离检测**：当彩色物体放到传感器前，RGB 占比会偏离基线，通过偏离方向和幅度判断颜色
+3. **饱和度门槛**：偏离幅度之和（saturation）< 0.025 时判定为无颜色/环境光
+4. **局限性**：
+   - 环境光变化会导致基线失效，必须重新校准（按 RST）
+   - VEML6040 对红色的灵敏度较高，对蓝色灵敏度偏低
+   - 室内 LED 灯光通常偏蓝（色温 5000K+），会影响基线
+   - 距离越远，颜色信号越弱，识别越不准确
+5. **代码实现**：使用 `float baseR/baseG/baseB` 存储基线，`calibrateBaseline()` 在 setup() 中自动调用
+
+**🚨 I²C 传感器编码最佳实践**：
+
+1. **必须在初始化前进行 I2C 扫描**（方便调试）：
+```cpp
+void scanI2C() {
+  Serial.println("正在扫描 I2C 设备...");
+  for (uint8_t addr = 1; addr < 127; addr++) {
+    Wire.beginTransmission(addr);
+    if (Wire.endTransmission() == 0) {
+      Serial.print("  找到设备: 0x");
+      Serial.println(addr, HEX);
+    }
+  }
+}
+```
+
+2. **传感器初始化失败时必须提供降级模式**，不要进入死循环：
+```cpp
+// ❌ 错误写法：传感器未找到就死循环
+if (!sensor) {
+  while (1) { 闪灯; }  // 用户无法判断程序是否烧录成功
+}
+
+// ✅ 正确写法：切换到降级/演示模式
+bool sensorFound = false;
+if (!sensor) {
+  Serial.println("传感器未检测到，进入演示模式");
+  sensorFound = false;
+  // 继续运行，用 LED 演示模式证明程序已烧录成功
+}
+```
+
+3. **setup() 延迟必须 ≥ 2000ms**：
+```cpp
+void setup() {
+  Serial.begin(115200);
+  delay(2000);  // ✅ USB-Serial/JTAG 模式需要足够的枚举时间
+}
 ```
 
 ### PS2 手柄引脚
@@ -638,6 +795,19 @@ void loop() {
 3. USB 必须是数据线（非充电线）
 4. 某些复杂功能可能需要用户确认细节
 5. Linux 用户需要 dialout 用户组权限
+6. **烧录时必须显式指定 `--upload-port`**，禁止依赖 PlatformIO 自动检测
+7. **`setup()` 中 `delay()` 必须 ≥ 2000ms**，确保 USB 串口稳定
+8. **I2C 传感器必须提供降级模式**，初始化失败不能进入死循环
+9. **PS2 手柄**（⚠️ v2 架构，关键约束）：
+   - 需要 `PS2X_lib` 库（ESP32 版本，手动放入 `lib/PS2X_lib/`）
+   - 初始化时需重试机制（最多 3 次）
+   - **必须使用硬件定时器中断（`hw_timer_t`）每 100ms 读取手柄**，禁止在 `loop()` 中直接调用 `read_gamepad()`
+   - **必须使用 8 通道 `motor_pwm[8]` 数组 + `motor_pwm_num[4][2]` 映射表**控制电机，禁止用 `setMotor(FWD, REV, speed)` 简单封装
+   - `loop()` 中只负责将 `motor_pwm[]` 数组值输出到 GPIO 引脚（注意 M2/M4 的 GPIO13/14、GPIO17/18 正反转顺序与 M1/M3 相反）
+   - 摇杆值使用 9 档 `pwm_value[]` 速度等级表（`{0, 150, 160, 170, 190, 210, 220, 230, 240}`），不要直接 `map()` 到 0-255
+   - 按键优先级高于摇杆：中断回调中先检测按键，有按键按下则直接 `return`，不执行摇杆逻辑
+   - 左摇杆 = 前后+差速转向（`motor_change()`），右摇杆 = 原地旋转+横移（`motor_change1()`），两套独立算法
+   - 详细代码模板见 `references/future_tech_box_v2_hardware.md` 的 PS2 手柄章节
 
 ---
 
@@ -731,7 +901,162 @@ python %USERPROFILE%\.platformio\packages\tool-esptoolpy\esptool.py ^
   0x10000 .pio\build\seeed_xiao_esp32s3\firmware.bin
 ```
 
-### 问题 4：CodeBuddy 命令执行超时
+### 问题 4：电机控制相关问题
+
+#### 4.1 电机速度设置
+
+**⚠️ 默认速度建议设置为 70%（180），不要超过 85%（220）**
+
+| 速度值 | 功率占比 | 说明 |
+|--------|----------|------|
+| 180 | 70% | ✅ **推荐默认值**，平衡动力和安全 |
+| 200 | 78% | 较高速度，适合地面阻力大的场景 |
+| 220 | 86% | ⚠️ 可能触发电池保护（过流） |
+| 255 | 100% | ❌ 不建议，容易触发保护或损坏电机 |
+
+**代码示例**：
+```cpp
+const int MOTOR_SPEED = 180;  // 默认速度 70%，避免触发电池保护
+```
+
+#### 4.2 按键检测在电机运动循环中无响应
+
+**症状**：按下按键无法切换模式或停止电机
+
+**根因**：使用 `delay()` 阻塞式等待，按键检测只在循环开头执行一次
+
+**❌ 错误写法**：
+```cpp
+void loop() {
+  // 按键只在这里检测一次
+  if (digitalRead(KEY_A) == LOW) {
+    // 切换模式
+  }
+  
+  // 这里阻塞了 3 秒，期间按键无法响应！
+  carForward(180);
+  delay(1500);
+  carStop();
+  delay(300);
+  carBackward(180);
+  delay(1200);
+}
+```
+
+**✅ 正确写法（非阻塞状态机）**：
+```cpp
+enum MoveState { STATE_FORWARD, STATE_STOP, STATE_BACKWARD };
+MoveState currentState = STATE_FORWARD;
+unsigned long stateStartTime = 0;
+
+void loop() {
+  // 1. 按键检测（每轮 loop 都执行）
+  checkButton();
+  
+  // 2. 状态机处理（非阻塞）
+  unsigned long elapsed = millis() - stateStartTime;
+  
+  switch (currentState) {
+    case STATE_FORWARD:
+      if (elapsed >= 1500) {
+        carStop();
+        currentState = STATE_STOP;
+        stateStartTime = millis();
+      }
+      break;
+    case STATE_STOP:
+      if (elapsed >= 300) {
+        carBackward(180);
+        currentState = STATE_BACKWARD;
+        stateStartTime = millis();
+      }
+      break;
+    // ...
+  }
+  
+  delay(10);  // 短暂延时，不阻塞按键检测
+}
+```
+
+#### 4.3 电机方向切换时堵转
+
+**症状**：快速切换方向时电机发出异响或卡顿
+
+**根因**：电机未完全停止就开始反向运动
+
+**解决方案**：方向切换前先停止电机并短暂延时
+
+```cpp
+void changeState(MoveState newState) {
+  // 先停止当前运动
+  carStop();
+  delay(50);  // 短暂延时让电机完全停止
+  
+  // 切换到新状态
+  currentState = newState;
+  stateStartTime = millis();
+  executeState(newState);
+}
+```
+
+#### 4.4 麦克纳姆轮运动不正常
+
+**可能原因**：
+1. 轮子安装方向错误（俯视应组成 "X" 形）
+2. 电机速度不一致
+3. 电池电量不足
+
+**调试建议**：
+- 先测试单个电机正反转是否正常
+- 检查四个电机速度是否一致
+- 确保电池电量充足
+
+### 问题 5：烧录显示成功但程序未生效（旧程序仍在运行）
+
+**症状**：`pio run -t upload` 显示 SUCCESS，但主板上仍然运行旧程序，新程序未生效
+
+**根因分析**：
+
+| 可能原因 | 概率 | 说明 |
+|----------|------|------|
+| **未指定串口端口** | ⭐⭐⭐ 高 | PlatformIO 自动检测在 USB-Serial/JTAG 模式下不可靠，可能选错端口或静默失败 |
+| ESP32-S3 USB 重枚举延迟 | ⭐⭐ 中 | 烧录后 Hard Reset 触发 USB 重枚举，新程序 `setup()` 中 delay 太短，启动信息丢失 |
+| 串口输出未捕获 | ⭐ 低 | 串口监视器打开太晚，错过启动日志 |
+
+**解决方案**：
+
+1. **始终显式指定端口**（最关键的改进）：
+   ```bash
+   # 先检查端口
+   pio device list
+   
+   # 指定端口烧录
+   pio run -t upload --upload-port COM11
+   ```
+
+2. **代码中增加启动延迟**：
+   ```cpp
+   void setup() {
+     Serial.begin(115200);
+     delay(2000);  // ✅ 等待 2 秒让 USB 串口稳定（不要只等 1 秒）
+     Serial.println("程序启动...");
+   }
+   ```
+
+3. **添加 I2C 扫描辅助调试**：当使用 I2C 传感器时，在 `setup()` 中加入 I2C 扫描，便于判断传感器是否连接正确。
+
+4. **添加无传感器降级模式**：如果传感器未检测到，不要进入死循环闪灯，而是切换到 LED 演示模式，这样至少能确认程序已成功烧录。
+
+**预防措施（写入编码规范）**：
+
+| 项目 | 旧写法 | 新写法 |
+|------|--------|--------|
+| 烧录命令 | `pio run -t upload` | `pio run -t upload --upload-port COMx` |
+| setup 延迟 | `delay(1000)` | `delay(2000)` |
+| 传感器初始化失败 | `while(1) { 闪灯 }` | 切换到演示/降级模式 |
+| I2C 传感器 | 直接初始化 | 先 I2C 扫描，再初始化 |
+
+### 问题 6：CodeBuddy 命令执行超时
 
 **症状**：命令被跳过，显示 "may take a long time"
 
@@ -743,6 +1068,23 @@ python %USERPROFILE%\.platformio\packages\tool-esptoolpy\esptool.py ^
 1. 确保依赖已下载（`framework.cached = true`）
 2. 依赖就绪后，编译仅需 8-10 秒，不会触发超时
 3. 如果首次使用，引导用户在终端手动执行一次 `pio run` 完成依赖下载
+
+### 问题 7：程序烧录后串口无输出
+
+**症状**：烧录成功后使用串口监视器看不到任何输出
+
+**根因分析**：
+
+| 可能原因 | 概率 | 说明 |
+|----------|------|------|
+| `setup()` 中 delay 太短 | ⭐⭐⭐ 高 | USB-Serial/JTAG 模式重枚举需要时间，1 秒可能不够 |
+| 串口波特率不匹配 | ⭐⭐ 中 | 代码中 115200 但监视器用了其他波特率 |
+| USB 重枚举后端口号变化 | ⭐ 低 | 复位后 COM 端口可能改变 |
+
+**解决方案**：
+1. `setup()` 开头使用 `delay(2000)` 而不是 `delay(1000)`
+2. 按 RST 复位按钮重新触发启动日志
+3. 确认监视器波特率与代码一致（115200）
 
 ---
 
@@ -842,3 +1184,533 @@ def upload_with_retry(project_path, port, max_retries=2):
     # 所有自动重试都失败，此时才需要用户介入
     return {"success": False, "need_user_action": True, "error": result.error}
 ```
+
+---
+
+## 🌐 WiFi Web 遥控方案（网页控制小车）
+
+当用户需求涉及**通过电脑/手机网页控制小车**时，使用本方案。ESP32-S3 自带 WiFi 802.11 b/g/n，可直接作为 Web Server 提供控制页面。
+
+### 方案选择流程
+
+```
+用户提出网页控制需求
+       ↓
+╔══════════════════════════════════════════════════════════════════╗
+║  📶 WiFi Web 遥控方案说明                                         ║
+╠══════════════════════════════════════════════════════════════════╣
+║                                                                  ║
+║  本方案需要电脑与小车在同一个网络下。                              ║
+║                                                                  ║
+║  🅰️ 【推荐】STA 模式（小车连接路由器 WiFi）                      ║
+║     小车连接到与电脑相同的 WiFi 网络，电脑浏览器打开小车 IP       ║
+║     即可控制。                                                    ║
+║     👉 请提供当前网络的 WiFi 名称和密码                           ║
+║                                                                  ║
+║  🅱️ AP 模式（小车创建热点，无需路由器）                          ║
+║     如果没有可用的 WiFi 网络，小车会自动创建热点，电脑连接        ║
+║     该热点后打开 192.168.4.1 即可控制。                           ║
+║     ⚠️  电脑连接热点后将无法上网                                  ║
+║                                                                  ║
+╚══════════════════════════════════════════════════════════════════╝
+```
+
+**优先使用 STA 模式**，用户无法提供 WiFi 信息时才使用 AP 模式。
+
+### 方案 A：STA 模式（小车连接路由器 WiFi）⭐ 推荐
+
+```
+┌──────────────┐       WiFi（同一局域网）       ┌───────────────┐
+│  电脑浏览器   │ ←────── WebSocket ──────────→ │  ESP32-S3 小车  │
+│  (控制页面)   │     低延迟 ~10-50ms           │  (Web Server)  │
+└──────────────┘                                └───────────────┘
+        ↑                    ↑                          ↑
+        └────────── 同一个 WiFi 路由器 ─────────────────┘
+```
+
+**工作原理**：
+1. ESP32 连接用户指定的 WiFi 路由器
+2. 启动 Web Server + WebSocket 服务
+3. 电脑浏览器打开 ESP32 的 IP 地址，显示控制页面
+4. 通过 WebSocket 实现实时低延迟双向通信
+
+**优点**：
+- ✅ 电脑正常上网，小车同时可控
+- ✅ 手机也能同时控制（多设备支持）
+- ✅ 延迟低（10-50ms）
+
+**用户提示**：需要用户提供 WiFi 名称（SSID）和密码
+
+### 方案 B：AP 模式（无需路由器）
+
+```
+┌──────────────┐    连接 ESP32 创建的热点     ┌───────────────┐
+│  电脑/手机    │ ←────── WebSocket ─────────→ │  ESP32-S3 小车  │
+│              │      192.168.4.1             │  (AP + Server) │
+└──────────────┘                               └───────────────┘
+```
+
+**工作原理**：
+1. ESP32 创建一个 WiFi 热点（如 `FutureCar_XXXX`）
+2. 电脑/手机连接该热点
+3. 浏览器打开 `192.168.4.1`，显示控制页面
+
+**优点**：
+- ✅ 无需路由器，户外也能用
+- ✅ 连接更稳定（直连）
+
+**缺点**：
+- ❌ 电脑连接热点后断网
+
+### PlatformIO 库依赖配置
+
+```ini
+[env:seeed_xiao_esp32s3]
+platform = espressif32
+board = seeed_xiao_esp32s3
+framework = arduino
+monitor_speed = 115200
+
+lib_deps = 
+    ESP Async WebServer
+    AsyncTCP
+```
+
+### WiFi Web 遥控代码模板
+
+#### STA 模式完整代码
+
+```cpp
+#include <Arduino.h>
+#include <WiFi.h>
+#include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
+
+// ==================== WiFi 配置 ====================
+// ⚠️ 需要用户提供，替换为实际的 WiFi 名称和密码
+const char* ssid = "YOUR_WIFI_SSID";
+const char* password = "YOUR_WIFI_PASSWORD";
+
+// ==================== 电机引脚定义 ====================
+#define M1_FWD 11
+#define M1_REV 12
+#define M2_FWD 14
+#define M2_REV 13
+#define M3_FWD 15
+#define M3_REV 16
+#define M4_FWD 18
+#define M4_REV 17
+
+// ==================== Web Server ====================
+AsyncWebServer server(80);
+AsyncWebSocket ws("/ws");
+
+// ==================== 电机控制函数 ====================
+void setMotor(int fwdPin, int revPin, int speed) {
+  speed = constrain(speed, -255, 255);
+  if (speed > 0) {
+    analogWrite(fwdPin, speed);
+    analogWrite(revPin, 0);
+  } else if (speed < 0) {
+    analogWrite(fwdPin, 0);
+    analogWrite(revPin, -speed);
+  } else {
+    analogWrite(fwdPin, 0);
+    analogWrite(revPin, 0);
+  }
+}
+
+void setMotorsSeparate(int m1, int m2, int m3, int m4) {
+  setMotor(M1_FWD, M1_REV, m1);
+  setMotor(M2_FWD, M2_REV, m2);
+  setMotor(M3_FWD, M3_REV, m3);
+  setMotor(M4_FWD, M4_REV, m4);
+}
+
+void carStop()                    { setMotorsSeparate(0, 0, 0, 0); }
+void carForward(int s = 180)     { setMotorsSeparate(s, s, s, s); }
+void carBackward(int s = 180)    { setMotorsSeparate(-s, -s, -s, -s); }
+void carTurnLeft(int s = 180)    { setMotorsSeparate(-s, s, -s, s); }
+void carTurnRight(int s = 180)   { setMotorsSeparate(s, -s, s, -s); }
+void carMoveLeft(int s = 180)    { setMotorsSeparate(-s, s, s, -s); }
+void carMoveRight(int s = 180)   { setMotorsSeparate(s, -s, -s, s); }
+
+// ==================== 当前速度 ====================
+int currentSpeed = 180;
+
+// ==================== 处理 WebSocket 消息 ====================
+void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
+  AwsFrameInfo *info = (AwsFrameInfo*)arg;
+  if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
+    data[len] = 0;
+    String msg = (char*)data;
+    
+    if (msg == "F")       carForward(currentSpeed);
+    else if (msg == "B")  carBackward(currentSpeed);
+    else if (msg == "L")  carTurnLeft(currentSpeed);
+    else if (msg == "R")  carTurnRight(currentSpeed);
+    else if (msg == "ML") carMoveLeft(currentSpeed);
+    else if (msg == "MR") carMoveRight(currentSpeed);
+    else if (msg == "S")  carStop();
+    else if (msg.startsWith("SPD:")) {
+      currentSpeed = msg.substring(4).toInt();
+      currentSpeed = constrain(currentSpeed, 0, 220);
+    }
+  }
+}
+
+// ==================== WebSocket 事件 ====================
+void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
+               AwsEventType type, void *arg, uint8_t *data, size_t len) {
+  switch (type) {
+    case WS_EVT_CONNECT:
+      Serial.printf("WebSocket 客户端 #%u 已连接\n", client->id());
+      break;
+    case WS_EVT_DISCONNECT:
+      Serial.printf("WebSocket 客户端 #%u 已断开\n", client->id());
+      carStop();  // 断开时自动停车
+      break;
+    case WS_EVT_DATA:
+      handleWebSocketMessage(arg, data, len);
+      break;
+    case WS_EVT_PONG:
+    case WS_EVT_ERROR:
+      break;
+  }
+}
+
+// ==================== 控制页面 HTML ====================
+const char index_html[] PROGMEM = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>小车遥控器</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; touch-action:manipulation; }
+  body { font-family:-apple-system,sans-serif; background:#1a1a2e; color:#fff;
+         display:flex; flex-direction:column; align-items:center;
+         min-height:100vh; padding:20px; user-select:none; }
+  h1 { font-size:24px; margin-bottom:10px; }
+  .status { font-size:14px; margin-bottom:20px; padding:6px 16px;
+            border-radius:20px; background:#16213e; }
+  .status.connected { color:#0f0; }
+  .status.disconnected { color:#f44; }
+  .controls { display:grid; grid-template-columns:repeat(3,80px);
+              grid-template-rows:repeat(3,80px); gap:10px; margin-bottom:20px; }
+  .btn { width:80px; height:80px; border:none; border-radius:16px; font-size:28px;
+         background:#16213e; color:#fff; cursor:pointer; display:flex;
+         align-items:center; justify-content:center; transition:all .1s; }
+  .btn:active, .btn.active { background:#e94560; transform:scale(0.95); }
+  .btn.empty { visibility:hidden; }
+  .side-controls { display:flex; gap:20px; margin-bottom:20px; }
+  .side-btn { width:100px; height:60px; border:none; border-radius:12px;
+              font-size:16px; background:#16213e; color:#fff; cursor:pointer; }
+  .side-btn:active, .side-btn.active { background:#0f3460; transform:scale(0.95); }
+  .speed-control { width:280px; text-align:center; margin-bottom:10px; }
+  .speed-control input { width:100%; }
+  .speed-label { font-size:14px; color:#aaa; }
+  .keyboard-hint { font-size:12px; color:#666; margin-top:15px; text-align:center; }
+</style>
+</head>
+<body>
+<h1>🚗 小车遥控器</h1>
+<div class="status disconnected" id="status">⏳ 连接中...</div>
+
+<div class="controls">
+  <div class="btn empty"></div>
+  <div class="btn" id="btnF" data-cmd="F">↑</div>
+  <div class="btn empty"></div>
+  <div class="btn" id="btnL" data-cmd="L">↺</div>
+  <div class="btn" id="btnS" data-cmd="S" style="background:#e94560;">⏹</div>
+  <div class="btn" id="btnR" data-cmd="R">↻</div>
+  <div class="btn empty"></div>
+  <div class="btn" id="btnB" data-cmd="B">↓</div>
+  <div class="btn empty"></div>
+</div>
+
+<div class="side-controls">
+  <div class="side-btn" id="btnML" data-cmd="ML">◀ 左横移</div>
+  <div class="side-btn" id="btnMR" data-cmd="MR">右横移 ▶</div>
+</div>
+
+<div class="speed-control">
+  <div class="speed-label">速度: <span id="speedVal">180</span> / 220</div>
+  <input type="range" id="speedSlider" min="80" max="220" value="180" step="10">
+</div>
+
+<div class="keyboard-hint">
+  💡 键盘: W/A/S/D=方向 Q/E=横移 Space=停止
+</div>
+
+<script>
+let ws;
+let connected = false;
+const statusEl = document.getElementById('status');
+
+function connect() {
+  ws = new WebSocket('ws://' + location.host + '/ws');
+  ws.onopen = () => {
+    connected = true;
+    statusEl.textContent = '✅ 已连接';
+    statusEl.className = 'status connected';
+  };
+  ws.onclose = () => {
+    connected = false;
+    statusEl.textContent = '❌ 已断开，重连中...';
+    statusEl.className = 'status disconnected';
+    setTimeout(connect, 2000);
+  };
+  ws.onerror = () => { ws.close(); };
+}
+connect();
+
+function send(cmd) {
+  if (connected && ws.readyState === WebSocket.OPEN) ws.send(cmd);
+}
+
+// 触摸/鼠标控制 - 按下发送指令，松开发送停止
+document.querySelectorAll('.btn[data-cmd], .side-btn[data-cmd]').forEach(btn => {
+  const cmd = btn.dataset.cmd;
+  
+  function onDown(e) {
+    e.preventDefault();
+    btn.classList.add('active');
+    send(cmd);
+  }
+  function onUp(e) {
+    e.preventDefault();
+    btn.classList.remove('active');
+    if (cmd !== 'S') send('S');
+  }
+  
+  btn.addEventListener('mousedown', onDown);
+  btn.addEventListener('mouseup', onUp);
+  btn.addEventListener('mouseleave', onUp);
+  btn.addEventListener('touchstart', onDown, {passive:false});
+  btn.addEventListener('touchend', onUp, {passive:false});
+});
+
+// 速度滑块
+const slider = document.getElementById('speedSlider');
+const speedVal = document.getElementById('speedVal');
+slider.addEventListener('input', () => {
+  speedVal.textContent = slider.value;
+  send('SPD:' + slider.value);
+});
+
+// 键盘控制
+const keyMap = {
+  'w':'F','W':'F', 'ArrowUp':'F',
+  's':'B','S':'B', 'ArrowDown':'B',
+  'a':'L','A':'L', 'ArrowLeft':'L',
+  'd':'R','D':'R', 'ArrowRight':'R',
+  'q':'ML','Q':'ML',
+  'e':'MR','E':'MR',
+  ' ':'S'
+};
+const btnMap = {'F':'btnF','B':'btnB','L':'btnL','R':'btnR','ML':'btnML','MR':'btnMR','S':'btnS'};
+const activeKeys = new Set();
+
+document.addEventListener('keydown', (e) => {
+  if (e.repeat) return;
+  const cmd = keyMap[e.key];
+  if (cmd) {
+    e.preventDefault();
+    activeKeys.add(e.key);
+    send(cmd);
+    const b = document.getElementById(btnMap[cmd]);
+    if (b) b.classList.add('active');
+  }
+});
+document.addEventListener('keyup', (e) => {
+  const cmd = keyMap[e.key];
+  if (cmd) {
+    activeKeys.delete(e.key);
+    const b = document.getElementById(btnMap[cmd]);
+    if (b) b.classList.remove('active');
+    if (activeKeys.size === 0 && cmd !== 'S') send('S');
+  }
+});
+</script>
+</body>
+</html>
+)rawliteral";
+
+// ==================== setup ====================
+void setup() {
+  Serial.begin(115200);
+  delay(2000);
+  
+  // 初始化电机引脚
+  pinMode(M1_FWD, OUTPUT); pinMode(M1_REV, OUTPUT);
+  pinMode(M2_FWD, OUTPUT); pinMode(M2_REV, OUTPUT);
+  pinMode(M3_FWD, OUTPUT); pinMode(M3_REV, OUTPUT);
+  pinMode(M4_FWD, OUTPUT); pinMode(M4_REV, OUTPUT);
+  analogWriteFrequency(10000);
+  carStop();
+  
+  // 连接 WiFi
+  Serial.println("正在连接 WiFi...");
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  
+  int retries = 0;
+  while (WiFi.status() != WL_CONNECTED && retries < 30) {
+    delay(500);
+    Serial.print(".");
+    retries++;
+  }
+  
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\n✅ WiFi 已连接!");
+    Serial.print("📡 IP 地址: ");
+    Serial.println(WiFi.localIP());
+    Serial.println("在浏览器中打开上面的 IP 地址即可控制小车");
+  } else {
+    Serial.println("\n❌ WiFi 连接失败，切换到 AP 模式...");
+    WiFi.mode(WIFI_AP);
+    WiFi.softAP("FutureCar_Control", "12345678");
+    Serial.print("📡 热点 IP: ");
+    Serial.println(WiFi.softAPIP());
+    Serial.println("请连接 WiFi: FutureCar_Control (密码: 12345678)");
+    Serial.println("然后在浏览器打开 192.168.4.1");
+  }
+  
+  // 配置 WebSocket
+  ws.onEvent(onWsEvent);
+  server.addHandler(&ws);
+  
+  // 配置 Web 页面
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send_P(200, "text/html", index_html);
+  });
+  
+  server.begin();
+  Serial.println("🚀 Web Server 已启动!");
+}
+
+// ==================== loop ====================
+void loop() {
+  ws.cleanupClients();
+  delay(10);
+}
+```
+
+#### AP 模式代码差异
+
+如果用户没有 WiFi，只需修改 `setup()` 中的 WiFi 连接部分：
+
+```cpp
+void setup() {
+  // ... 电机初始化同上 ...
+  
+  // AP 模式：小车创建热点
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP("FutureCar_Control", "12345678");
+  
+  Serial.println("📡 热点已创建!");
+  Serial.println("WiFi 名称: FutureCar_Control");
+  Serial.println("WiFi 密码: 12345678");
+  Serial.print("控制地址: http://");
+  Serial.println(WiFi.softAPIP());  // 192.168.4.1
+  
+  // ... WebSocket 和 Web Server 配置同上 ...
+}
+```
+
+### WiFi Web 遥控 - 用户交互流程
+
+生成 WiFi Web 遥控代码时，必须按以下流程与用户交互：
+
+```
+Step 1: 显示方案说明提示框（见上方"方案选择流程"）
+       ↓
+Step 2: 用户选择方案
+       ├─ 提供了 WiFi 名称和密码 → 使用 STA 模式（方案 A）
+       └─ 没有 WiFi / 不想提供  → 使用 AP 模式（方案 B）
+       ↓
+Step 3: 生成代码，替换 WiFi 凭据
+       ↓
+Step 4: 编译烧录（按常规 Phase 2/3 流程）
+       ↓
+Step 5: 烧录成功后提示用户操作：
+```
+
+**烧录成功后的提示（STA 模式）**：
+```
+🎉 烧录成功！WiFi 遥控小车已就绪！
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+操作步骤：
+1. 等待 5 秒，小车自动连接 WiFi
+2. 打开串口监视器查看小车获取到的 IP 地址
+3. 在电脑浏览器中打开该 IP 地址（如 http://192.168.x.x）
+4. 使用页面按钮或键盘 WASD 控制小车！
+
+💡 键盘快捷键：
+   W=前进  S=后退  A=左转  D=右转
+   Q=左横移  E=右横移  空格=停止
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+**烧录成功后的提示（AP 模式）**：
+```
+🎉 烧录成功！WiFi 遥控小车已就绪！
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+操作步骤：
+1. 在电脑/手机的 WiFi 列表中找到 "FutureCar_Control"
+2. 连接该热点，密码: 12345678
+3. 在浏览器中打开 http://192.168.4.1
+4. 使用页面按钮或键盘 WASD 控制小车！
+
+⚠️ 连接小车热点后电脑将无法上网，控制完成后请切回原 WiFi。
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+### WebSocket 通信协议
+
+| 消息 | 方向 | 说明 |
+|------|------|------|
+| `F` | 客户端→ESP32 | 前进 |
+| `B` | 客户端→ESP32 | 后退 |
+| `L` | 客户端→ESP32 | 左转 |
+| `R` | 客户端→ESP32 | 右转 |
+| `ML` | 客户端→ESP32 | 左横移（麦克纳姆轮） |
+| `MR` | 客户端→ESP32 | 右横移（麦克纳姆轮） |
+| `S` | 客户端→ESP32 | 停止 |
+| `SPD:xxx` | 客户端→ESP32 | 设置速度（0-220） |
+
+### ⚠️ WiFi Web 遥控注意事项
+
+1. **WiFi 连接超时处理**：STA 模式下如果 15 秒内连不上 WiFi，自动回退到 AP 模式
+2. **断连自动停车**：WebSocket 断开时必须调用 `carStop()`，防止小车失控
+3. **速度限制**：Web 端最大速度限制 220（86%），避免触发电池保护
+4. **多客户端**：WebSocket 支持多个客户端同时连接，但可能产生指令冲突
+5. **内存占用**：HTML 页面使用 `PROGMEM` 存储在 Flash 中，不占用 RAM
+6. **安全性**：局域网内使用，无需额外加密；AP 模式设置了密码
+
+---
+
+### FreeRTOS 多任务编程约束
+
+当用户需要**多个传感器同时并行工作**（如循迹 + 颜色识别 + 超声波避障 + 舵机抓取），应使用 FreeRTOS 多任务：
+
+1. **判断是否需要多任务**：
+   - ≤2 个传感器 → 使用 `millis()` 非阻塞编程即可，**不需要多任务**
+   - ≥3 个传感器并行 → 推荐使用 FreeRTOS 多任务
+   - WiFi + 多传感器 → 推荐使用 FreeRTOS 多任务
+
+2. **核心分配规则**：
+   - **Core 0**：传感器读取任务（颜色传感器、超声波、加速度计等）
+   - **Core 1**：主控制任务（电机控制、循迹逻辑、WiFi/WebSocket）← `loop()` 默认运行在 Core 1
+
+3. **代码规范**：
+   - 使用 `xTaskCreatePinnedToCore()` 创建任务并绑定核心
+   - 用 `vTaskDelay(pdMS_TO_TICKS(ms))` 替代 `delay()`
+   - 跨任务共享变量必须声明为 `volatile`
+   - I2C 操作集中在同一个任务中（I2C 非线程安全）
+   - 任务栈大小：使用传感器库时至少 4096 字节，简单任务 2048 字节
+   - 任务函数必须包含无限循环 `for(;;){}`，不能退出
+
+4. **详细代码模板**见 `references/future_tech_box_v2_hardware.md` 的 "FreeRTOS 多任务编程" 章节
