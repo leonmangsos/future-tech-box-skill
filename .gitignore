@@ -28,6 +28,7 @@ venv/
 ehthumbs.db
 Thumbs.db
 desktop.ini
+$null
 
 # Build outputs
 *.o
@@ -41,10 +42,11 @@ desktop.ini
 *.temp
 *.log
 
-# Test project build outputs (keep source files)
-buzzer_led_test/.pio/
-led_key_test/.pio/
-led_sequence_test/.pio/
+# Temporary directories
+temp_images/
+
+# FUE CLI tool artifacts
+.fue/
 
 # Keep these
 !.codebuddy/

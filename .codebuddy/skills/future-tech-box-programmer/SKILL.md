@@ -1,9 +1,9 @@
 ---
-name: future-tech-box-programmer
-description: This skill should be used when users want to program the Future Tech Box 2.0 (未来科技盒) board based on XIAO ESP32S3. It handles the complete workflow from natural language requirement to code generation, compilation and flashing. Trigger phrases include "编程未来科技盒", "烧录程序到主板", "让LED亮起来", "控制电机", or any hardware control request mentioning 未来科技盒/XIAO ESP32S3.
+name: future-tech-box-2.0-programmer
+description: This skill should be used when users want to program the Future Tech Box 2.0 (未来科技盒2.0) board based on XIAO ESP32S3. It handles the complete workflow from natural language requirement to code generation, compilation and flashing. Trigger phrases include "编程未来科技盒2.0", "烧录程序到主板", "让LED亮起来", "控制电机", or any hardware control request mentioning 未来科技盒2.0/XIAO ESP32S3.
 ---
 
-# 未来科技盒 2.0 自动编程烧录
+# 未来科技盒 2.0 自动编程烧录（v2.0 Skill）
 
 ## 概述
 本 skill 实现从用户自然语言需求到代码生成、编译、烧录的完整自动化流程。
@@ -135,9 +135,9 @@ sudo usermod -a -G dialout $USER
 ║  [✓] ESP32-S3 工具链已缓存                                        ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║  请输入您想要实现的功能，例如：                                    ║
-║  • "让 LED 灯逐一亮起呼吸灯效果"                                  ║
-║  • "按下按键 A 时蜂鸣器响一声"                                    ║
-║  • "让小车前进 3 秒后停止"                                        ║
+  ║  • "让 LED 灯逐一亮起呼吸灯效果"                                  ║
+  ║  • "按下按键 A 时 LED 全部点亮"                                   ║
+  ║  • "让小车前进 3 秒后停止"                                        ║
 ╚══════════════════════════════════════════════════════════════════╝
 ```
 
@@ -202,10 +202,18 @@ sudo usermod -a -G dialout $USER
    cd "<项目完整路径>"
    pio run
 
-3. 编译成功后执行烧录：
-   pio run -t upload
+3. 编译成功后执行烧录（esptool 直调，--after no_reset 不自动运行）：
+   python %USERPROFILE%\.platformio\packages\tool-esptoolpy\esptool.py ^
+     --chip esp32s3 --port <端口> --baud 921600 ^
+     --before default_reset --after no_reset ^
+     write_flash -z --flash_mode dio --flash_freq 80m --flash_size 8MB ^
+     0x0 .pio\build\seeed_xiao_esp32s3\bootloader.bin ^
+     0x8000 .pio\build\seeed_xiao_esp32s3\partitions.bin ^
+     0x10000 .pio\build\seeed_xiao_esp32s3\firmware.bin
 
-4. （可选）查看串口输出：
+4. 烧录完成后重新开关主板电源，程序才会运行
+
+5. （可选）重新上电后查看串口输出：
    pio device monitor
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
@@ -238,20 +246,34 @@ RAM 使用：xxx KB (占用 xx%)
 > **XIAO ESP32S3 使用 USB-Serial/JTAG 模式**，PlatformIO 的自动端口检测在此模式下**不可靠**，
 > 可能出现：自动选错端口、检测超时、烧录看似成功但实际未写入等问题。
 >
-> **强制要求**：烧录命令**必须**使用 `--upload-port` 显式指定串口：
+> **强制要求**：
+> 1. 烧录命令必须使用 esptool 直调 + `--after no_reset`（禁止 `pio run -t upload`，详见 3.1）
+> 2. 必须显式指定串口端口
 > ```bash
-> # ✅ 正确写法：显式指定端口
-> pio run -t upload --upload-port COM11
+> # ✅ 正确写法：esptool 直调 + 显式端口 + --after no_reset（见 3.1 完整命令）
+> python %USERPROFILE%\.platformio\packages\tool-esptoolpy\esptool.py \
+>   --chip esp32s3 --port COM11 --baud 921600 \
+>   --before default_reset --after no_reset write_flash ...
 >
-> # ❌ 错误写法：依赖自动检测
+> # ❌ 错误写法1：依赖自动检测（可能选错端口）
 > pio run -t upload
+>
+> # ❌ 错误写法2：pio upload（烧录完会 hard_reset 自动运行程序）
+> pio run -t upload --upload-port COM11
 > ```
 >
 > **端口获取方式**：在烧录前先运行 `pio device list` 获取当前连接的端口号。
 
 #### 3.1 烧录执行策略
 
-**主烧录命令**：`pio run -t upload --upload-port <PORT> -d <project_path>`
+**主烧录命令**：先用 `pio run` 编译生成固件，再用 **esptool 直调 + `--after no_reset`** 烧录。
+
+> 🚨 **为什么不用 `pio run -t upload`？**
+>
+> `pio run -t upload` 默认在烧录完成后会 `hard_reset`（自动运行程序）。
+> 这会导致烧录完成瞬间电机/舵机被驱动，极易触发笔记本 USB 接口"电流过载提醒"（USB 口额定仅 0.5-3A，电机启动瞬间可达 1.5-2.5A）。
+>
+> 因此**必须使用 esptool 直调并加 `--after no_reset`**，让烧录完成后停留在下载模式，不自动运行程序。
 
 **⚠️ 烧录前必须先获取端口**：
 ```bash
@@ -259,9 +281,33 @@ RAM 使用：xxx KB (占用 xx%)
 pio device list
 # 找到 VID:PID=303A:1001 的设备，记录端口号（如 COM11）
 
-# Step 2: 使用获取到的端口号烧录
-pio run -t upload --upload-port COM11
+# Step 2: 编译固件（确保最新代码）
+pio run -d <project_path>
+
+# Step 3: 使用 esptool 直调烧录（--after no_reset 保证烧录后不自动运行）
+# Windows:
+python %USERPROFILE%\.platformio\packages\tool-esptoolpy\esptool.py ^
+  --chip esp32s3 --port <PORT> --baud 921600 ^
+  --before default_reset --after no_reset ^
+  write_flash -z --flash_mode dio --flash_freq 80m --flash_size 8MB ^
+  0x0 <project_path>\.pio\build\seeed_xiao_esp32s3\bootloader.bin ^
+  0x8000 <project_path>\.pio\build\seeed_xiao_esp32s3\partitions.bin ^
+  0x10000 <project_path>\.pio\build\seeed_xiao_esp32s3\firmware.bin
+
+# macOS / Linux:
+python ~/.platformio/packages/tool-esptoolpy/esptool.py \
+  --chip esp32s3 --port <PORT> --baud 921600 \
+  --before default_reset --after no_reset \
+  write_flash -z --flash_mode dio --flash_freq 80m --flash_size 8MB \
+  0x0 <project_path>/.pio/build/seeed_xiao_esp32s3/bootloader.bin \
+  0x8000 <project_path>/.pio/build/seeed_xiao_esp32s3/partitions.bin \
+  0x10000 <project_path>/.pio/build/seeed_xiao_esp32s3/firmware.bin
 ```
+
+**说明**：
+- `--before default_reset`：esptool 通过 USB-Serial/JTAG 的 DTR/RTS 自动让芯片进入下载模式，**无需用户手动按 BOOT**
+- `--after no_reset`：烧录完成后芯片停留在下载模式（ROM bootloader），**不自动运行程序**
+- 用户重新开关主板电源（或拔插 USB）后，新程序才会开始运行
 
 **烧录开始时显示**（仅作提醒，不需要等待用户确认）：
 ```
@@ -273,6 +319,7 @@ pio run -t upload --upload-port COM11
 
 ⚠️  烧录过程中请勿断开 USB 连接！
 💡 如遇烧录失败，可能需要按一下 RST 复位按钮后重试
+💡 烧录完成后程序不会自动运行，需重新开关电源（防 USB 过载）
 
 ⏳ 烧录中，请稍候...
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -285,7 +332,7 @@ pio run -t upload --upload-port COM11
 ```
 烧录失败自动处理流程：
 ┌─────────────────────────────────────────────────────────┐
-│  Step 1: 自动等待 3 秒后重试 pio run -t upload          │
+│  Step 1: 自动等待 3 秒后重试 esptool 直调烧录           │
 │          最多自动重试 2 次（无需用户确认）               │
 └─────────────────────────────────────────────────────────┘
                          ↓
@@ -296,7 +343,7 @@ pio run -t upload --upload-port COM11
                          ↓
 ┌─────────────────────────────────────────────────────────┐
 │  Step 3: 用户确认后，再重试烧录                         │
-│          如果仍失败，改用 esptool 直接烧录              │
+│          仍失败则提示按 RST 后重试                      │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -330,10 +377,11 @@ pio run -t upload --upload-port COM11
 
 #### 3.4 备用烧录命令
 
-**如果 pio 烧录始终失败，尝试使用 esptool 直接调用**：
+**如果主烧录命令失败，再次使用 esptool 直调（与主命令一致，同样带 `--after no_reset`）**：
 ```bash
 python %USERPROFILE%\.platformio\packages\tool-esptoolpy\esptool.py ^
   --chip esp32s3 --port {PORT} --baud 921600 ^
+  --before default_reset --after no_reset ^
   write_flash -z --flash_mode dio --flash_freq 80m --flash_size 8MB ^
   0x0 {PROJECT}\.pio\build\seeed_xiao_esp32s3\bootloader.bin ^
   0x8000 {PROJECT}\.pio\build\seeed_xiao_esp32s3\partitions.bin ^
@@ -346,9 +394,12 @@ python %USERPROFILE%\.platformio\packages\tool-esptoolpy\esptool.py ^
 ```
 🎉 烧录成功！
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-程序已写入主板，即将自动运行。
+程序已写入主板。
 
-如需查看串口输出，请说"打开串口监视器"。
+⚠️ 程序【不会自动运行】。
+请重新开关主板电源（或拔插一次 USB 线）后，程序才会开始运行。
+
+如需查看串口输出，请先重新上电，再说"打开串口监视器"。
 如需修改程序，请直接描述新的需求。
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
@@ -361,7 +412,6 @@ python %USERPROFILE%\.platformio\packages\tool-esptoolpy\esptool.py ^
 |------|------|----------|
 | LED 矩阵 | ✅ | "让 LED 呼吸灯效果" |
 | 按键 | ✅ | "按下按键 A 时..." |
-| 蜂鸣器 | ✅ | "播放一段音乐" |
 | 超声波传感器 | ✅ | "测量前方距离" |
 | **电机控制** | ✅ | "让小车前进"、"原地左转" |
 | **循迹传感器** | ✅ | "实现循迹小车" |
@@ -372,8 +422,22 @@ python %USERPROFILE%\.platformio\packages\tool-esptoolpy\esptool.py ^
 | **I2C 温湿度** | ✅ | "读取当前温度" |
 | **WiFi Web 遥控** | ✅ | "用电脑/手机网页控制小车" |
 | **FreeRTOS 多任务** | ✅ | "同时循迹+颜色识别+超声波避障" |
+| **蜂鸣器** | ✅ | "蜂鸣器响一声"、"播放音乐"、"提示音" |
+| **语音模块 (ASR Pro)** | 🔌 | 预刷程序，串口通讯控制，暂不需要编程 |
 
-✅ = 已支持
+✅ = 已支持 &emsp; ❌ = 当前版本不支持 &emsp; 🔌 = 外部模块（无需编程）
+
+### ⚠️ 语音模块 ASR Pro 说明
+
+本版本搭载的语音模块为 **ASR Pro**，其工作方式如下：
+
+- **无需编程**：ASR Pro 模块已预刷好程序，上电即可工作
+- **通讯方式**：通过引脚串口通讯（UART）与 ESP32-S3 主控交互
+- **控制逻辑**：ASR Pro 识别语音指令后，通过串口发送控制命令给 ESP32-S3，由主控执行相应动作
+- **后续计划**：后续可能独立为 ASR Pro 编写自定义程序，届时将新增对应的 Skill 支持
+
+> 📌 当用户要求"语音控制"功能时，只需在 ESP32-S3 端编写**串口接收和解析**的代码，
+> 不需要对 ASR Pro 本身进行编程。ASR Pro 发送的指令格式取决于其预刷固件。
 
 ### 小车形态电机布局
 
@@ -478,9 +542,25 @@ void carMoveFrontRight(int speed = MOTOR_SPEED) {
 | 温湿度 | DHT20 | 0x38 | `Grove Temperature And Humidity Sensor` |
 
 **I²C 初始化必须指定引脚**：
+
+未来科技盒有两组 I2C 接口，引脚不同，使用时需根据传感器实际插入的接口选择对应引脚：
+
+| I2C 组 | 对应接口 | SDA | SCL | 说明 |
+|--------|----------|-----|-----|------|
+| I2C1（默认） | 接口1 / 接口8 | GPIO39 | GPIO40 | 大部分传感器默认使用 |
+| I2C2 | 接口7 | GPIO37 | GPIO36 | 摄像头AI板或第二组I2C设备 |
+
 ```cpp
 #include <Wire.h>
+
+// 传感器插在接口1或接口8时（默认）
 Wire.begin(39, 40);  // SDA=GPIO39, SCL=GPIO40
+
+// 传感器插在接口7时
+// Wire.begin(37, 36);  // SDA=GPIO37, SCL=GPIO36
+
+// 如需同时使用两组I2C，使用Wire1：
+// Wire1.begin(37, 36);  // 第二组I2C: SDA=GPIO37, SCL=GPIO36
 ```
 
 ### 🔴 VEML6040 颜色传感器使用注意事项（重要！必须告知用户）
@@ -577,6 +657,82 @@ void setup() {
 | 左循迹 | GPIO2 | 接口3-PIN1 |
 | 右循迹 | GPIO1 | 接口3-PIN2 |
 
+> ⚠️ **3.0 版本循迹传感器引脚不同！**
+> - 2.0：左=GPIO2，右=GPIO1
+> - 3.0：左=GPIO3，右=GPIO4
+> - 生成循迹代码前必须确认目标版本！
+
+### 超声波传感器引脚（接口2）
+
+超声波传感器插在**接口2**时的引脚映射：
+
+| 接口2引脚 | GPIO | 超声波模块引脚 | 说明 |
+|-----------|------|---------------|------|
+| PIN1 | GPIO8 | NC（未连接） | 该引脚无用，不需要操作 |
+| PIN2 | GPIO7 | SIG（信号） | **唯一有效引脚**，既做 Trig 又做 Echo |
+
+**⚠️ 这是单线超声波模块（SIG 模式）**，只使用 GPIO7 一个引脚完成距离测量。
+
+**工作原理**：
+1. 将 GPIO7 设为 OUTPUT，发送 10μs 高电平触发脉冲（Trig）
+2. 将 GPIO7 切换为 INPUT，读取回波高电平持续时间（Echo）
+3. 根据声速计算距离：距离(cm) = 脉冲时间(μs) / 58
+
+**超声波传感器代码模板**：
+```cpp
+#define ULTRASONIC_SIG 7  // 接口2-PIN2 (GPIO7)，单线 SIG 模式
+
+// 读取超声波距离（单位：cm）
+float readUltrasonic() {
+  // Step 1: 发送触发脉冲
+  pinMode(ULTRASONIC_SIG, OUTPUT);
+  digitalWrite(ULTRASONIC_SIG, LOW);
+  delayMicroseconds(2);
+  digitalWrite(ULTRASONIC_SIG, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(ULTRASONIC_SIG, LOW);
+  
+  // Step 2: 切换为输入，读取回波
+  pinMode(ULTRASONIC_SIG, INPUT);
+  long duration = pulseIn(ULTRASONIC_SIG, HIGH, 30000);  // 超时 30ms（约 5m）
+  
+  // Step 3: 计算距离
+  if (duration == 0) {
+    return -1;  // 超时，无有效回波
+  }
+  float distance = duration / 58.0;
+  return distance;
+}
+```
+
+**使用示例**：
+```cpp
+void setup() {
+  Serial.begin(115200);
+  delay(2000);
+  Serial.println("超声波传感器测试 (接口2, SIG 模式)");
+}
+
+void loop() {
+  float dist = readUltrasonic();
+  if (dist > 0) {
+    Serial.print("距离: ");
+    Serial.print(dist, 1);
+    Serial.println(" cm");
+  } else {
+    Serial.println("超出范围");
+  }
+  delay(100);  // 测量间隔至少 60ms，建议 100ms
+}
+```
+
+**⚠️ 超声波传感器注意事项**：
+1. **GPIO8 不需要初始化**，它连接的是超声波模块的 NC（空引脚），忽略即可
+2. **测量间隔**：两次测量之间至少间隔 60ms，推荐 100ms，避免前次回波干扰
+3. **有效量程**：约 2cm ~ 400cm，过近或过远会返回 -1
+4. **pulseIn 超时**：设置为 30000μs（约 5m 距离），超时返回 0 表示无回波
+5. **与 LED 扫描共存**：`pulseIn()` 有阻塞等待（最长 30ms），如果同时使用 LED 矩阵扫描，建议将超声波测量放在 FreeRTOS 独立任务中，避免影响 LED 刷新
+
 ### ⚠️ LED 矩阵控制要点（必读）
 
 **这是 3×3 行列扫描 LED 矩阵，控制逻辑如下：**
@@ -667,36 +823,24 @@ void loop() {
 3. **有 LED 扫描时禁止使用 `delay()` 消抖**，改用 `millis()` 非阻塞方式
 4. 为每个按键创建独立的状态变量
 
-### ⚠️ 蜂鸣器控制要点（必读）
+### 蜂鸣器控制要点
 
-| 功能 | GPIO | 说明 |
-|------|------|------|
-| 蜂鸣器 | GPIO26 | 有源/无源蜂鸣器 |
-
-**简单播放方式**：
-```cpp
-#define BUZZER_PIN 26
-
-void beep(int freq = 1000, int duration = 100) {
-  tone(BUZZER_PIN, freq, duration);  // 使用 Arduino tone() 函数
-}
-```
-
-**🚨 有 LED 矩阵扫描时必须用非阻塞方式！**
+- **引脚**：GPIO26（有源/无源蜂鸣器）
+- **基本用法**：`tone(26, freq, duration)` / `noTone(26)`
+- **LEDC 方式**（更灵活）：`ledcAttach(26, freq, 8)` + `ledcWriteTone(26, freq)` / `ledcWriteTone(26, 0)` 停止
+- **与 LED 矩阵共存时必须用非阻塞方式**：
 
 ```cpp
 #define BUZZER_PIN 26
 unsigned long buzzerEndTime = 0;
 bool buzzerActive = false;
 
-// 非阻塞播放
-void beepNonBlocking(int duration = 100) {
+void startBuzzer(unsigned long duration) {
   tone(BUZZER_PIN, 1000);
   buzzerEndTime = millis() + duration;
-  buzzerActive = true;
+buzzerActive = true;
 }
 
-// 在 loop 中调用检查
 void updateBuzzer() {
   if (buzzerActive && millis() >= buzzerEndTime) {
     noTone(BUZZER_PIN);
@@ -705,37 +849,10 @@ void updateBuzzer() {
 }
 
 void loop() {
-  if (lastKeyA == HIGH && currentKeyA == LOW) {
-    beepNonBlocking(100);  // ✅ 非阻塞
-    turnOnAllLEDs();
-  }
-  lastKeyA = currentKeyA;
-  
-  updateBuzzer();   // 检查蜂鸣器
-  scanDisplay();    // LED 扫描不会被阻塞
+  scanDisplay();  // LED 矩阵扫描
+  updateBuzzer(); // 非阻塞检查蜂鸣器
 }
 ```
-
-**❌ 禁止这样写**：
-```cpp
-// 错误1：使用旧的 ledcSetup API（每次都重新设置）
-void playBuzzer() {
-  ledcSetup(0, 1000, 8);        // ⚠️ 旧 API，且不应每次都调用
-  ledcAttachPin(BUZZER_PIN, 0); // ⚠️ 不应每次都调用
-  ledcWrite(0, 128);
-}
-
-// 错误2：阻塞式播放（会导致 LED 闪烁/卡顿）
-tone(BUZZER_PIN, 1000);
-delay(100);  // ⚠️ 阻塞了 LED 扫描！
-noTone(BUZZER_PIN);
-```
-
-**生成蜂鸣器控制代码时必须遵循：**
-1. 使用 `tone(pin, freq, duration)` 或 `tone(pin, freq)` + `noTone(pin)`
-2. **有 LED 扫描时必须用非阻塞方式**：`millis()` 计时 + `updateBuzzer()` 检查
-3. 禁止使用 `ledcSetup()`/`ledcAttachPin()` 旧 API
-4. 禁止在 LED 扫描的程序中使用 `delay()` 等待蜂鸣器
 
 ### ⚠️ 非阻塞编程原则（重要！）
 
@@ -754,8 +871,8 @@ void loop() {
 
 **所有需要延时的操作都改用 `millis()` 非阻塞方式：**
 - 按键消抖：用 `millis() - lastKeyTime > 50` 代替 `delay(50)`
-- 蜂鸣器定时：用 `millis() >= buzzerEndTime` 代替 `delay(duration)`
 - 动画效果：用 `millis() - lastFrameTime > interval` 代替 `delay(interval)`
+- 定时操作：用 `millis() >= endTime` 代替 `delay(duration)`
 
 ---
 
@@ -790,15 +907,21 @@ void loop() {
 
 ## 约束与限制
 
-1. 仅支持未来科技盒 2.0（XIAO ESP32S3）
+1. 仅支持未来科技盒 2.0（XIAO ESP32S3）和 3.0（ESP32-S3 QFN56）
 2. 需要稳定的网络连接（首次下载依赖）
 3. USB 必须是数据线（非充电线）
 4. 某些复杂功能可能需要用户确认细节
 5. Linux 用户需要 dialout 用户组权限
-6. **烧录时必须显式指定 `--upload-port`**，禁止依赖 PlatformIO 自动检测
-7. **`setup()` 中 `delay()` 必须 ≥ 2000ms**，确保 USB 串口稳定
-8. **I2C 传感器必须提供降级模式**，初始化失败不能进入死循环
-9. **PS2 手柄**（⚠️ v2 架构，关键约束）：
+6. **烧录时必须显式指定串口端口**，禁止依赖 PlatformIO 自动检测
+7. **烧录必须使用 esptool 直调 + `--after no_reset`**（禁止 `pio run -t upload`，因其会 hard_reset 自动运行程序，烧录完成瞬间驱动电机可能触发笔记本 USB 电流过载提醒）。烧录完成后程序不自动运行，需提示用户**重新开关主板电源**后运行
+8. **`setup()` 中 `delay()` 必须 ≥ 2000ms**，确保 USB 串口稳定
+9. **I2C 传感器必须提供降级模式**，初始化失败不能进入死循环
+10. **PlatformIO 命令优先使用 `python -m platformio`**，如果 `pio.exe` 被系统策略阻止则必须使用此方式（见问题 8）
+11. **区分 2.0 和 3.0 硬件**：生成代码前必须确认目标版本，LED 控制方式完全不同（见问题 9）
+12. **3.0 版本 RGB LED 亮度建议 20-50**，避免 LED 过亮刺眼和电流过大
+13. **3.0 版本 platformio.ini 必须配置 CH343 串口**：`board = esp32-s3-devkitc-1` + `ARDUINO_USB_CDC_ON_BOOT=0`（见问题 10）
+14. **NeoPixel 亮度调节禁止闪白反馈**：`setBrightness()` 后必须直接用当前颜色 `show()`，不得插入闪白效果（见问题 11）
+15. **PS2 手柄**（⚠️ v2 架构，关键约束）：
    - 需要 `PS2X_lib` 库（ESP32 版本，手动放入 `lib/PS2X_lib/`）
    - 初始化时需重试机制（最多 3 次）
    - **必须使用硬件定时器中断（`hw_timer_t`）每 100ms 读取手柄**，禁止在 `loop()` 中直接调用 `read_gamepad()`
@@ -808,6 +931,7 @@ void loop() {
    - 按键优先级高于摇杆：中断回调中先检测按键，有按键按下则直接 `return`，不执行摇杆逻辑
    - 左摇杆 = 前后+差速转向（`motor_change()`），右摇杆 = 原地旋转+横移（`motor_change1()`），两套独立算法
    - 详细代码模板见 `references/future_tech_box_v2_hardware.md` 的 PS2 手柄章节
+16. **2.0 与 3.0 循迹传感器引脚不同**：2.0 用 GPIO2/GPIO1，3.0 用 GPIO3/GPIO4，生成循迹代码前必须确认目标版本
 
 ---
 
@@ -846,12 +970,6 @@ error: 'ledcAttach' was not declared in this scope
 
 **解决方案**：
 
-**蜂鸣器控制**：推荐使用 Arduino 标准 `tone()`/`noTone()` 函数（跨版本兼容）：
-```cpp
-tone(BUZZER_PIN, 1000, 100);  // 播放 1000Hz，持续 100ms
-noTone(BUZZER_PIN);            // 停止播放
-```
-
 **PWM 控制（如电机调速）**：使用 2.x 兼容 API
 ```cpp
 // 初始化（仅在 setup() 中调用一次）
@@ -862,7 +980,7 @@ ledcAttachPin(pin, channel);
 ledcWrite(channel, brightness);  // 注意：使用通道号，不是引脚号
 ```
 
-**⚠️ 注意**：蜂鸣器请勿使用 `ledcSetup`/`ledcAttachPin`，直接用 `tone()` 更简单可靠。
+**💡 蜂鸣器**：GPIO26 支持 `tone()`/`noTone()`，与 LED 矩阵共存时注意使用非阻塞方式（参见蜂鸣器控制要点）。
 
 ### 问题 3：烧录失败 - 端口不可用
 
@@ -880,9 +998,9 @@ Error: PermissionError(13, '拒绝访问')
 | 驱动问题 | ⭐ 低 | USB 驱动异常 |
 
 **自动处理策略**（SKILL 应实现）：
-1. **自动重试**：等待 2-3 秒后重试烧录，最多 3 次
+1. **自动重试**：等待 2-3 秒后重试 esptool 直调烧录，最多 3 次
 2. **检测端口状态**：在烧录前运行 `detect_port_windows.py` 确认串口可用
-3. **使用 esptool 直接烧录**：如果 `pio run -t upload` 失败，改用 esptool 直接调用
+3. **保持 esptool 直调**：主命令即 esptool 直调（见 3.1），失败时重试同一命令
 
 **手动排查步骤**：
 1. 运行串口检测脚本：`python scripts/detect_port_windows.py`
@@ -890,11 +1008,12 @@ Error: PermissionError(13, '拒绝访问')
 3. 尝试：按住主板 BOOT 按钮 → 插入 USB → 松开 BOOT
 4. 检查设备管理器是否显示 COM 端口
 
-**烧录命令备用方案**：
+**烧录命令（与主命令一致，esptool 直调 + `--after no_reset`）**：
 ```bash
-# 如果 pio run -t upload 失败，使用 esptool 直接烧录：
+# esptool 直调烧录（--after no_reset，烧录后不自动运行程序）
 python %USERPROFILE%\.platformio\packages\tool-esptoolpy\esptool.py ^
   --chip esp32s3 --port COM6 --baud 921600 ^
+  --before default_reset --after no_reset ^
   write_flash -z --flash_mode dio --flash_freq 80m --flash_size 8MB ^
   0x0 .pio\build\seeed_xiao_esp32s3\bootloader.bin ^
   0x8000 .pio\build\seeed_xiao_esp32s3\partitions.bin ^
@@ -1013,28 +1132,32 @@ void changeState(MoveState newState) {
 
 ### 问题 5：烧录显示成功但程序未生效（旧程序仍在运行）
 
-**症状**：`pio run -t upload` 显示 SUCCESS，但主板上仍然运行旧程序，新程序未生效
+**症状**：烧录显示 SUCCESS，但主板上仍然运行旧程序，新程序未生效
 
 **根因分析**：
 
 | 可能原因 | 概率 | 说明 |
 |----------|------|------|
-| **未指定串口端口** | ⭐⭐⭐ 高 | PlatformIO 自动检测在 USB-Serial/JTAG 模式下不可靠，可能选错端口或静默失败 |
-| ESP32-S3 USB 重枚举延迟 | ⭐⭐ 中 | 烧录后 Hard Reset 触发 USB 重枚举，新程序 `setup()` 中 delay 太短，启动信息丢失 |
-| 串口输出未捕获 | ⭐ 低 | 串口监视器打开太晚，错过启动日志 |
+| **烧录后未重新上电** | ⭐⭐⭐ 高 | 主烧录命令使用 `--after no_reset`，烧录完成后程序**不会自动运行**，需重新开关主板电源后才运行新程序 |
+| **未指定串口端口** | ⭐⭐ 中 | 自动检测在 USB-Serial/JTAG 模式下不可靠，可能选错端口或静默失败 |
+| ESP32-S3 USB 重枚举延迟 | ⭐ 低 | 复位后 USB 重枚举，新程序 `setup()` 中 delay 太短，启动信息丢失 |
 
 **解决方案**：
 
-1. **始终显式指定端口**（最关键的改进）：
+1. **烧录成功后必须重新上电**（no_reset 模式的正常行为）：
+   - 重新开关主板电源开关，或拔插一次 USB 线
+   - 重新上电后新程序才会开始运行
+   - ⚠️ 不要误以为烧录失败！
+
+2. **始终显式指定端口**（烧录前的关键操作）：
    ```bash
    # 先检查端口
    pio device list
    
-   # 指定端口烧录
-   pio run -t upload --upload-port COM11
+   # 指定端口烧录（esptool 直调，见 3.1 节）
    ```
 
-2. **代码中增加启动延迟**：
+3. **代码中增加启动延迟**：
    ```cpp
    void setup() {
      Serial.begin(115200);
@@ -1043,15 +1166,16 @@ void changeState(MoveState newState) {
    }
    ```
 
-3. **添加 I2C 扫描辅助调试**：当使用 I2C 传感器时，在 `setup()` 中加入 I2C 扫描，便于判断传感器是否连接正确。
+4. **添加 I2C 扫描辅助调试**：当使用 I2C 传感器时，在 `setup()` 中加入 I2C 扫描，便于判断传感器是否连接正确。
 
-4. **添加无传感器降级模式**：如果传感器未检测到，不要进入死循环闪灯，而是切换到 LED 演示模式，这样至少能确认程序已成功烧录。
+5. **添加无传感器降级模式**：如果传感器未检测到，不要进入死循环闪灯，而是切换到 LED 演示模式，这样至少能确认程序已成功烧录。
 
 **预防措施（写入编码规范）**：
 
 | 项目 | 旧写法 | 新写法 |
 |------|--------|--------|
-| 烧录命令 | `pio run -t upload` | `pio run -t upload --upload-port COMx` |
+| 烧录命令 | `pio run -t upload`（会 hard_reset 自动运行） | esptool 直调 + `--after no_reset`（烧录后停下载模式） |
+| 烧录成功后 | 自动运行 | 提示用户重新开关电源后再运行 |
 | setup 延迟 | `delay(1000)` | `delay(2000)` |
 | 传感器初始化失败 | `while(1) { 闪灯 }` | 切换到演示/降级模式 |
 | I2C 传感器 | 直接初始化 | 先 I2C 扫描，再初始化 |
@@ -1077,14 +1201,304 @@ void changeState(MoveState newState) {
 
 | 可能原因 | 概率 | 说明 |
 |----------|------|------|
-| `setup()` 中 delay 太短 | ⭐⭐⭐ 高 | USB-Serial/JTAG 模式重枚举需要时间，1 秒可能不够 |
+| **烧录后未重新上电** | ⭐⭐⭐ 高 | no_reset 模式下芯片停在下载模式，不运行程序，自然没有串口输出；必须重新开关电源后程序才运行 |
+| `setup()` 中 delay 太短 | ⭐⭐ 中 | USB-Serial/JTAG 模式重枚举需要时间，1 秒可能不够 |
 | 串口波特率不匹配 | ⭐⭐ 中 | 代码中 115200 但监视器用了其他波特率 |
 | USB 重枚举后端口号变化 | ⭐ 低 | 复位后 COM 端口可能改变 |
 
 **解决方案**：
-1. `setup()` 开头使用 `delay(2000)` 而不是 `delay(1000)`
-2. 按 RST 复位按钮重新触发启动日志
-3. 确认监视器波特率与代码一致（115200）
+1. **先确认已重新上电**：烧录完成后芯片停在下载模式，串口不会有输出。重新开关主板电源（或拔插 USB）后程序运行，再打开串口监视器
+2. `setup()` 开头使用 `delay(2000)` 而不是 `delay(1000)`
+3. 按 RST 复位按钮重新触发启动日志
+4. 确认监视器波特率与代码一致（115200）
+
+### 问题 8：`pio.exe` 被 Windows 应用控制策略阻止
+
+**症状**：
+```
+程序"pio.exe"无法运行: An Application Control policy has blocked this file
+CategoryInfo: ResourceUnavailable
+FullyQualifiedErrorId: NativeCommandFailed
+```
+
+**根因分析**：
+
+| 可能原因 | 概率 | 说明 |
+|----------|------|------|
+| Windows AppLocker/WDAC 策略 | ⭐⭐⭐ 高 | 企业/学校电脑常配置应用白名单策略，Python Scripts 目录下的 .exe 不在白名单中 |
+| Windows Defender 应用控制 | ⭐⭐ 中 | SmartScreen 或 Defender 策略阻止未签名的可执行文件 |
+| 杀毒软件拦截 | ⭐ 低 | 第三方安全软件拦截 |
+
+**解决方案（关键！已验证有效）**：
+
+使用 `python -m platformio` 代替 `pio` 命令。Python 解释器本身通常在白名单中，通过模块调用方式可以绕过对 `pio.exe` 的阻止：
+
+```bash
+# ❌ 被阻止的写法
+pio run
+pio run -t upload --upload-port COM10
+pio device list
+
+# ✅ 正确写法（用 python -m platformio 代替 pio）
+python -m platformio run
+python -m platformio device list
+# ⚠️ 烧录不再用 pio upload（会 hard_reset 自动运行），改用 esptool 直调（见 3.1）
+python %USERPROFILE%\.platformio\packages\tool-esptoolpy\esptool.py \
+  --chip esp32s3 --port COM10 --baud 921600 \
+  --before default_reset --after no_reset write_flash ...
+```
+
+**⚠️ SKILL 执行时的强制规则**：
+1. **所有 PlatformIO 命令一律使用 `python -m platformio` 前缀**，不要直接使用 `pio`
+2. 如果 `python -m platformio` 也失败，再尝试用完整路径：`python "C:\Users\用户名\AppData\Local\Programs\Python\Python311\Scripts\pio.exe"`
+3. 编译命令：`python -m platformio run -d <项目路径>`
+4. **烧录命令：esptool 直调 + `--after no_reset`**（禁止 `python -m platformio run -t upload`，会自动运行程序；完整命令见 3.1）
+5. 设备列表：`python -m platformio device list`
+6. 串口监视器：`python -m platformio device monitor`
+
+**预防措施**：在 Phase 0 环境扫描时，应检测 `pio` 命令是否可用，如果不可用则自动切换到 `python -m platformio` 方式。
+
+### 问题 9：未来科技盒 3.0 与 2.0 的硬件差异导致代码不兼容
+
+**症状**：为 2.0 编写的代码烧录到 3.0 上无法正常工作，或反之
+
+**根因**：3.0 和 2.0 在关键硬件上有本质差异
+
+**未来科技盒 3.0 vs 2.0 硬件对比**：
+
+| 硬件特征 | 2.0 版本 | 3.0 版本 |
+|----------|----------|----------|
+| **主控芯片** | XIAO ESP32S3 | ESP32-S3 (QFN56) |
+| **USB 转串口** | USB-Serial/JTAG (内置) | CH343 外置芯片 |
+| **VID:PID** | 303A:1001 | 1A86:55D3 |
+| **LED 类型** | 3×3 行列扫描矩阵 (GPIO33-38) | 9×WS2812 RGB LED (GPIO33 单总线) |
+| **LED 控制方式** | 行HIGH+列LOW 点亮，需持续扫描 | Adafruit NeoPixel 库，单总线协议 |
+| **LED 颜色** | 单色（红色） | 全彩 RGB（1600万色） |
+
+**⚠️ 关键差异说明**：
+
+1. **LED 控制完全不同**：
+   - 2.0 使用 `scanDisplay()` 行列扫描，`loop()` 中不能有阻塞延时
+   - 3.0 使用 `Adafruit_NeoPixel` 库的 `strip.setPixelColor()` + `strip.show()`，可以使用 `delay()`
+
+2. **USB 串口芯片不同（关键差异！）**：
+   - 2.0 使用 ESP32-S3 内置 USB-Serial/JTAG（VID:PID = `303A:1001`），烧录后会 USB 重枚举，端口号可能变化
+   - 3.0 使用 **CH343 外置 USB 转串口芯片**（VID:PID = `1A86:55D3`），端口更稳定，烧录后端口号通常不变
+   - CH343 是沁恒（WCH）公司的高速 USB 转串口芯片，支持最高 6Mbps 波特率
+   - **Windows 驱动**：CH343 需要安装 WCH 的驱动程序（CH343SER），如果设备管理器中显示为未识别设备或黄色感叹号，需要手动安装驱动
+   - **串口识别**：在 `pio device list` 中，3.0 设备显示为 `USB-Enhanced-SERIAL CH343` 而非 `USB-Serial/JTAG`
+   - **platformio.ini 配置**：3.0 必须设置 `ARDUINO_USB_CDC_ON_BOOT=0`，否则 `Serial.print` 输出会走 ESP32 内置 USB 而非 CH343，串口监视器将看不到任何输出
+
+3. **烧录可靠性**：
+   - 3.0 因使用外置 CH343 芯片，PlatformIO 自动端口检测更可靠（不会因 USB 重枚举导致端口号变化）
+   - 但仍**强烈建议**显式指定 `--upload-port` 避免意外
+   - 3.0 烧录速度通常为 460800 bps（CH343 默认），比 2.0 的 USB-Serial/JTAG 模式更稳定
+
+**3.0 版本 RGB LED 代码模板**：
+```cpp
+#include <Adafruit_NeoPixel.h>
+
+#define RGB_PIN     33
+#define NUM_LEDS    9
+#define BRIGHTNESS  30    // 建议 20-50，避免 LED 过亮刺眼
+
+Adafruit_NeoPixel strip(NUM_LEDS, RGB_PIN, NEO_GRB + NEO_KHZ800);
+
+void setup() {
+  strip.begin();
+  strip.setBrightness(BRIGHTNESS);
+  strip.clear();
+  strip.show();
+}
+
+void loop() {
+  // 设置第 i 个 LED 的颜色 (R, G, B)
+  strip.setPixelColor(0, strip.Color(255, 0, 0));    // 红色
+  strip.setPixelColor(1, strip.Color(0, 255, 0));    // 绿色
+  strip.setPixelColor(2, strip.Color(0, 0, 255));    // 蓝色
+  strip.show();  // 刷新显示
+  
+  // HSV 颜色（更方便生成彩虹效果）
+  uint32_t color = strip.gamma32(strip.ColorHSV(hue, 255, 255));
+  strip.setPixelColor(i, color);
+}
+```
+
+**3.0 版本 platformio.ini 模板**：
+```ini
+[env:esp32s3]
+platform = espressif32
+board = esp32-s3-devkitc-1
+framework = arduino
+monitor_speed = 115200
+
+lib_deps = 
+    adafruit/Adafruit NeoPixel
+
+; ⚠️ CH343 USB 转串口配置（3.0 必须）
+; 3.0 使用外置 CH343 芯片做 USB 转串口，不是 ESP32-S3 内置 USB
+; 必须关闭 USB CDC on Boot，否则串口输出会走内置 USB 而非 CH343
+build_flags = 
+    -DARDUINO_USB_MODE=1
+    -DARDUINO_USB_CDC_ON_BOOT=0
+```
+
+> ⚠️ **3.0 platformio.ini 必须同时满足两个条件**：
+> 1. `board = esp32-s3-devkitc-1`（不能用 `seeed_xiao_esp32s3`）
+> 2. `build_flags` 中有 `-DARDUINO_USB_CDC_ON_BOOT=0`
+> 缺少任一条件都会导致串口无输出或编译失败。
+
+> ⚠️ **3.0 与 2.0 的 board 和串口配置差异**：
+> - 2.0 使用 `board = seeed_xiao_esp32s3`，串口走 ESP32-S3 内置 USB-Serial/JTAG
+> - 3.0 使用 `board = esp32-s3-devkitc-1`，串口走外置 CH343 芯片，必须设置 `ARDUINO_USB_CDC_ON_BOOT=0`
+> - 如果 3.0 不设置 `ARDUINO_USB_CDC_ON_BOOT=0`，Serial.print 的输出会走内置 USB 而非 CH343，导致串口监视器看不到任何输出
+
+**RGB 亮度建议**：
+
+| 亮度值 | 效果 | 适用场景 |
+|--------|------|----------|
+| 20-30 | 柔和护眼 | ✅ **推荐日常使用** |
+| 40-60 | 中等亮度 | 展示演示 |
+| 80-100 | 较亮 | ⚠️ 户外或光线强的环境 |
+| >100 | 刺眼 | ❌ 不建议，LED 发热大且电流高 |
+
+### 问题 10：3.0 版本烧录试错经验记录
+
+**以下是在 3.0 版本实际烧录过程中遇到的错误和解决方案，供后续参考：**
+
+#### 10.1 board 配置错误
+
+**症状**：编译失败或烧录后串口无输出
+
+**错误写法**：
+```ini
+board = seeed_xiao_esp32s3    ; ❌ 这是 2.0 的板型
+```
+
+**正确写法**：
+```ini
+board = esp32-s3-devkitc-1    ; ✅ 3.0 使用通用 ESP32-S3 板型
+```
+
+**原因**：3.0 使用的是 ESP32-S3 QFN56 封装 + CH343 外置串口芯片，与 XIAO ESP32S3 开发板的硬件架构不同，不能使用 `seeed_xiao_esp32s3` 板型配置。
+
+#### 10.2 USB CDC 配置缺失导致串口无输出
+
+**症状**：程序烧录成功，LED 正常工作，但串口监视器看不到任何 `Serial.print` 输出
+
+**根因**：3.0 使用 CH343 做 USB 转串口，但 ESP32-S3 默认可能会将 Serial 输出路由到内置 USB CDC。如果不显式关闭 USB CDC on Boot，串口输出可能走错通道。
+
+**解决方案**：在 `platformio.ini` 的 `build_flags` 中添加：
+```ini
+build_flags = 
+    -DARDUINO_USB_MODE=1
+    -DARDUINO_USB_CDC_ON_BOOT=0
+```
+
+#### 10.3 CH343 驱动未安装
+
+**症状**：USB 连接后设备管理器中显示未知设备或黄色感叹号，`pio device list` 找不到串口
+
+**解决方案**：
+1. 前往 WCH 官网下载 CH343 驱动：https://www.wch.cn/downloads/CH343SER_EXE.html
+2. 安装驱动后重新插入 USB，设备管理器应显示 `USB-Enhanced-SERIAL CH343 (COMx)`
+3. 在 `pio device list` 中应能看到 VID:PID = `1A86:55D3` 的设备
+
+#### 10.4 烧录端口自动检测失败
+
+**症状**：烧录报错找不到端口或选错了端口
+
+**经验**：虽然 CH343 比内置 USB-Serial/JTAG 更稳定，但在电脑上同时连接了多个 USB 设备时，自动检测仍可能出错。
+
+**强制规则**：3.0 烧录时同样必须显式指定端口，并使用 esptool 直调 + `--after no_reset`：
+```bash
+# 先查看端口
+python -m platformio device list
+
+# 找到 CH343 设备的 COM 端口号，然后 esptool 直调烧录（no_reset，不自动运行）
+python %USERPROFILE%\.platformio\packages\tool-esptoolpy\esptool.py \
+  --chip esp32s3 --port COMx --baud 460800 \
+  --before default_reset --after no_reset write_flash ...
+```
+
+### 问题 11：NeoPixel RGB LED 亮度切换时闪烁（3.0 特有）
+
+**症状**：按键调节亮度时，LED 先整体闪烁一下白光/全亮，然后才恢复到正确的亮度和颜色
+
+**根因分析**：
+
+| 可能原因 | 概率 | 说明 |
+|----------|------|------|
+| **代码中加了闪白反馈效果** | ⭐⭐⭐ 高 | `brightnessChangeFeedback()` 函数在设置新亮度后先闪白色，造成视觉闪烁 |
+| `setBrightness()` 后未立即刷新显示 | ⭐⭐ 中 | 调用 `setBrightness()` 后没有立即用当前颜色数据调用 `show()`，下次 `show()` 时亮度突变 |
+
+**⚠️ NeoPixel `setBrightness()` 的工作原理（重要！）**：
+
+`strip.setBrightness()` 不会立即改变 LED 的显示效果，它只是设置了一个全局亮度缩放因子。**下一次调用 `strip.show()` 时才会应用新的亮度值**。因此：
+
+1. 如果在 `setBrightness()` 之后插入了"闪白"或其他颜色的效果，用户会先看到一次高亮度的全白闪烁
+2. 正确做法是 `setBrightness()` 后立即用当前颜色数据调用 `show()`，实现平滑过渡
+
+**❌ 错误写法**（会导致闪烁）：
+```cpp
+void onKeyPressed() {
+  currentBrightness += step;
+  strip.setBrightness(currentBrightness);
+  
+  // ❌ 闪白反馈——这会造成视觉上的突然闪烁
+  for (int i = 0; i < NUM_LEDS; i++) {
+    strip.setPixelColor(i, strip.Color(255, 255, 255));
+  }
+  strip.show();
+  delay(50);
+}
+```
+
+**✅ 正确写法**（平滑亮度过渡）：
+```cpp
+void onKeyPressed() {
+  currentBrightness += step;
+  strip.setBrightness(currentBrightness);
+  
+  // ✅ 直接用当前颜色重新刷新，无闪烁
+  for (int i = 0; i < NUM_LEDS; i++) {
+    int pixelHue = rainbowHue + (i * 65536L / NUM_LEDS);
+    strip.setPixelColor(i, strip.gamma32(strip.ColorHSV(pixelHue)));
+  }
+  strip.show();  // 立即以新亮度显示当前颜色
+}
+```
+
+**生成 NeoPixel 亮度调节代码时的强制规则**：
+1. **禁止在亮度切换时加入闪白/闪色反馈效果**
+2. 调用 `setBrightness()` 后必须立即用当前颜色数据调用 `show()`
+3. 如需按键反馈，可通过串口输出或短暂改变颜色色相（而非白色闪烁）来实现
+
+### 问题 12：2.0 与 3.0 循迹传感器引脚混淆
+
+**症状**：循迹小车程序在不同版本主板上工作异常，循迹传感器无反应或反应颠倒
+
+**根因**：2.0 和 3.0 的循迹传感器使用不同的 GPIO 引脚
+
+| 版本 | 左循迹 GPIO | 右循迹 GPIO | 接口 |
+|------|------------|------------|------|
+| **2.0** | GPIO2 | GPIO1 | 接口3 |
+| **3.0** | GPIO3 | GPIO4 | 接口3 |
+
+**解决方案**：
+1. 生成循迹代码前**必须确认目标硬件版本**
+2. 在 `pins.h` 中使用宏定义，方便切换：
+```cpp
+// === 2.0 版本 ===
+#define TRACK_LEFT  2
+#define TRACK_RIGHT 1
+
+// === 3.0 版本 ===
+// #define TRACK_LEFT  3
+// #define TRACK_RIGHT 4
+```
+
+**预防措施**：当用户提到"循迹"但未指定版本时，必须询问确认是 2.0 还是 3.0。
 
 ---
 
@@ -1096,12 +1510,16 @@ void changeState(MoveState newState) {
 ✅ 检查项                        命令/方法                           通过条件
 ──────────────────────────────────────────────────────────────────────────────
 [ ] Python 版本                  python --version                   >= 3.8
-[ ] PlatformIO CLI               pio --version                      >= 6.0
+[ ] PlatformIO CLI               python -m platformio --version     >= 6.0
+[ ] pio.exe 可用性               pio --version                      如被阻止→用 python -m platformio
 [ ] 串口连接                      detect_port_windows.py             status=ok
-[ ] ESP32 平台                   pio pkg list -g                    有 espressif32
+[ ] ESP32 平台                   python -m platformio pkg list -g   有 espressif32
 [ ] Arduino 框架（关键）          check_environment.py               framework.cached=true
 [ ] 工具链                        check_environment.py               toolchain.cached=true
 ```
+
+> ⚠️ **重要**：如果 `pio` 命令被系统策略阻止（见问题 8），所有后续步骤必须使用
+> `python -m platformio` 代替 `pio`。这在企业/学校管理的电脑上非常常见。
 
 **如果 Arduino 框架未缓存，必须提前告知用户**：
 - 首次编译将下载 50-100MB 依赖
@@ -1643,6 +2061,7 @@ Step 5: 烧录成功后提示用户操作：
 🎉 烧录成功！WiFi 遥控小车已就绪！
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 操作步骤：
+0. ⚠️ 程序不会自动运行，请先重新开关主板电源（或拔插 USB）
 1. 等待 5 秒，小车自动连接 WiFi
 2. 打开串口监视器查看小车获取到的 IP 地址
 3. 在电脑浏览器中打开该 IP 地址（如 http://192.168.x.x）
@@ -1659,6 +2078,7 @@ Step 5: 烧录成功后提示用户操作：
 🎉 烧录成功！WiFi 遥控小车已就绪！
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 操作步骤：
+0. ⚠️ 程序不会自动运行，请先重新开关主板电源（或拔插 USB）
 1. 在电脑/手机的 WiFi 列表中找到 "FutureCar_Control"
 2. 连接该热点，密码: 12345678
 3. 在浏览器中打开 http://192.168.4.1

@@ -5,8 +5,13 @@
 功能：
 1. 自动检测串口状态
 2. 串口被占用时自动等待重试
-3. pio upload 失败时改用 esptool 直接烧录
+3. 使用 esptool 直调烧录（--after no_reset，烧录后不自动运行程序）
 4. 输出 JSON 格式结果
+
+说明：
+- 使用 --after no_reset 让烧录完成后芯片停留在下载模式，不自动运行程序
+- 避免烧录完成瞬间驱动电机导致笔记本 USB 接口电流过载提醒
+- 用户需重新开关主板电源（或拔插 USB）后，新程序才会运行
 
 使用方法：
 python upload_with_retry.py <project_path> [--port COM6] [--max-retries 3]
@@ -57,25 +62,25 @@ def detect_port():
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-def run_pio_upload(project_path):
-    """使用 PlatformIO 烧录"""
+def run_pio_build(project_path):
+    """使用 PlatformIO 编译（不烧录，避免 hard_reset）"""
     try:
         result = subprocess.run(
-            ['pio', 'run', '-t', 'upload', '-d', project_path],
+            ['pio', 'run', '-d', project_path],
             capture_output=True,
             text=True,
-            timeout=120
+            timeout=180
         )
         return {
             "success": result.returncode == 0,
             "stdout": result.stdout,
             "stderr": result.stderr,
-            "method": "pio"
+            "method": "pio-build"
         }
     except subprocess.TimeoutExpired:
-        return {"success": False, "error": "Timeout", "method": "pio"}
+        return {"success": False, "error": "Timeout", "method": "pio-build"}
     except Exception as e:
-        return {"success": False, "error": str(e), "method": "pio"}
+        return {"success": False, "error": str(e), "method": "pio-build"}
 
 def run_esptool_upload(project_path, port):
     """使用 esptool 直接烧录"""
@@ -110,6 +115,8 @@ def run_esptool_upload(project_path, port):
             '--chip', 'esp32s3',
             '--port', port,
             '--baud', '921600',
+            '--before', 'default_reset',
+            '--after', 'no_reset',
             'write_flash', '-z',
             '--flash_mode', 'dio',
             '--flash_freq', '80m',
@@ -187,50 +194,45 @@ def upload_with_retry(project_path, port=None, max_retries=3, retry_delay=3):
         
         attempt_result["port"] = detected_port
         
-        # Step 2: 尝试 PlatformIO 烧录
-        upload_result = run_pio_upload(project_path)
-        attempt_result["pio_result"] = {
-            "success": upload_result.get("success"),
-            "method": "pio"
+        # Step 2: 编译固件（不烧录，避免 hard_reset 自动运行程序）
+        build_result = run_pio_build(project_path)
+        attempt_result["build_result"] = {
+            "success": build_result.get("success"),
+            "method": "pio-build"
         }
         
-        if upload_result.get("success"):
+        if not build_result.get("success"):
+            attempt_result["action"] = "build_failed"
+            attempt_result["error"] = build_result.get("stderr", build_result.get("error", "编译失败"))
+            results["attempts"].append(attempt_result)
+            if attempt < max_retries:
+                time.sleep(retry_delay)
+            continue
+        
+        # Step 3: 使用 esptool 直调烧录（--after no_reset，烧录后不自动运行程序）
+        esptool_result = run_esptool_upload(project_path, detected_port)
+        attempt_result["esptool_result"] = {
+            "success": esptool_result.get("success"),
+            "method": "esptool"
+        }
+        
+        if esptool_result.get("success"):
             attempt_result["action"] = "success"
-            attempt_result["message"] = "PlatformIO 烧录成功"
+            attempt_result["message"] = "esptool 烧录成功（程序未自动运行，请重新开关电源）"
             results["attempts"].append(attempt_result)
             results["final_success"] = True
             break
         
-        # Step 3: 如果是端口被占用，尝试 esptool
-        if is_port_busy_error(upload_result):
-            attempt_result["action"] = "fallback_to_esptool"
-            attempt_result["message"] = "PlatformIO 失败(端口被占用)，尝试 esptool"
-            
-            # 等待一下再用 esptool
-            time.sleep(2)
-            
-            esptool_result = run_esptool_upload(project_path, detected_port)
-            attempt_result["esptool_result"] = {
-                "success": esptool_result.get("success"),
-                "method": "esptool"
-            }
-            
-            if esptool_result.get("success"):
-                attempt_result["message"] = "esptool 烧录成功"
-                results["attempts"].append(attempt_result)
-                results["final_success"] = True
-                break
-            
-            # esptool 也失败了
-            if is_port_busy_error(esptool_result) and attempt < max_retries:
-                attempt_result["message"] = f"esptool 也失败(端口被占用)，等待 {retry_delay} 秒后重试"
-                results["attempts"].append(attempt_result)
-                time.sleep(retry_delay)
-                continue
+        # esptool 失败：如果是端口被占用，等待后重试
+        if is_port_busy_error(esptool_result) and attempt < max_retries:
+            attempt_result["message"] = f"esptool 失败(端口被占用)，等待 {retry_delay} 秒后重试"
+            results["attempts"].append(attempt_result)
+            time.sleep(retry_delay)
+            continue
         
         # 其他错误
         attempt_result["action"] = "failed"
-        attempt_result["error"] = upload_result.get("stderr", upload_result.get("error", "Unknown error"))
+        attempt_result["error"] = esptool_result.get("stderr", esptool_result.get("error", "Unknown error"))
         results["attempts"].append(attempt_result)
         
         if attempt < max_retries:
@@ -240,7 +242,7 @@ def upload_with_retry(project_path, port=None, max_retries=3, retry_delay=3):
     
     # 生成最终消息
     if results["final_success"]:
-        results["message"] = "烧录成功"
+        results["message"] = "烧录成功（程序未自动运行，请重新开关主板电源后运行）"
     else:
         results["message"] = f"烧录失败（已尝试 {max_retries} 次）"
         results["suggestion"] = "请按一下主板上的 RST 按钮，然后重试"
