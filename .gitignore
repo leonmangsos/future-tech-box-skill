@@ -54,3 +54,10 @@ offline_package/
 # Keep these
 !.codebuddy/
 !.codebuddy/**
+
+# NOTE: 上面的 !.codebuddy/** 会重新包含所有被忽略文件，以下规则必须放在它之后覆盖
+# Re-ignore build artifacts inside .codebuddy (must stay AFTER !.codebuddy/**)
+.codebuddy/**/__pycache__/
+.codebuddy/**/*.pyc
+.codebuddy/**/*.pyo
+.codebuddy/**/*.log
