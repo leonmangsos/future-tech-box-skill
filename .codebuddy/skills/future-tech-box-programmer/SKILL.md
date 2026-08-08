@@ -1,16 +1,17 @@
 ---
 name: future-tech-box-2.0-programmer
-description: This skill should be used when users want to program the Future Tech Box 2.0 (未来科技盒2.0) board based on XIAO ESP32S3. It handles the complete workflow from natural language requirement to code generation, compilation and flashing. Trigger phrases include "编程未来科技盒2.0", "烧录程序到主板", "让LED亮起来", "控制电机", or any hardware control request mentioning 未来科技盒2.0/XIAO ESP32S3.
+description: This skill should be used when users want to program the Future Tech Box 2.0 (未来科技盒2.0) board based on XIAO ESP32S3. It handles the complete workflow from natural language requirement to code generation, compilation and flashing. It also supports NEW CURRICULUM (新课标) project solution generation mode when teachers ask "how to build a project/work with the Future Tech Box" (e.g. 智能浇花系统/循迹小车方案), the skill generates standards-aligned teaching project plans based on 《义务教育信息科技课程标准（2022年版2025年修订）》 before coding. Trigger phrases include "编程未来科技盒2.0", "烧录程序到主板", "让LED亮起来", "控制电机", "如何用未来科技盒做", "未来科技盒方案", "未来科技盒作品设计", or any hardware/project design request mentioning 未来科技盒2.0/XIAO ESP32S3.
 ---
 
 # 未来科技盒 2.0 自动编程烧录（v2.0 Skill）
 
 ## 概述
-本 skill 实现从用户自然语言需求到代码生成、编译、烧录的完整自动化流程。
+本 skill 实现从用户自然语言需求到代码生成、编译、烧录的完整自动化流程，并新增**新课标方案生成模式**：当教师提出「如何用未来科技盒做某某方案/作品」时，先输出符合《义务教育信息科技课程标准（2022年版2025年修订）》的项目方案，方案确认后再进入编程烧录主流程。
 
 **目标硬件**：未来科技盒 2.0（基于 Seeed XIAO ESP32S3）  
 **开发框架**：PlatformIO + Arduino  
-**支持系统**：Windows / macOS / Linux
+**支持系统**：Windows / macOS / Linux  
+**Skill 版本**：v0.3.0（新增新课标方案生成模式）
 
 ---
 
@@ -59,6 +60,90 @@ sudo usermod -a -G dialout $USER
 - **网络一般**：10-20 分钟
 - **后续编译**：10-30 秒（已缓存）
 
+### ⚠️ 默认安装到非系统盘（强制，防止 C 盘爆满）
+
+PlatformIO 默认把 **平台包 + Arduino 框架 + 工具链** 装在 `~/.platformio/`（系统盘）：
+- **Windows**：`C:\Users\<用户名>\.platformio\`
+- **macOS**：`/Users/<用户名>/.platformio/`
+- **Linux**：`/home/<用户名>/.platformio/`
+
+**实际总占用 5-6GB**（ESP32 平台包 ~500MB + Arduino 框架 ~500MB + 工具链 ~1.5GB + 包缓存/平台索引会随编译持续膨胀）。**默认装到 C 盘对系统盘紧张的用户不可接受。**
+
+> 🚨 **本 skill 首次执行时，默认把 PlatformIO core 目录安装到非系统盘**（而不是默认 C 盘）。
+
+#### 首次执行的强制流程（SKILL 必须执行）
+
+```
+Step 1: 运行环境检测
+   python scripts/check_environment.py
+   → 检查 platformio_core_source 字段
+
+Step 2: 判断 core 目录是否在系统盘
+   ├─ platformio_core_source == "PLATFORMIO_CORE_DIR"  → 已迁移到非系统盘 ✅ 跳过
+   ├─ core 目录在非系统盘（如 D:\...）              → ✅ 无需处理
+   └─ core 目录在系统盘（C 盘 / 默认位置）           → 必须执行 Step 3
+
+Step 3: 一键迁移到非系统盘（默认引导）
+   # 交互式：脚本列出所有磁盘 → 用户选择目标盘
+   python scripts/migrate_core_dir.py
+   # 或直接指定目标目录：
+   python scripts/migrate_core_dir.py --target D:\DevTools\platformio
+
+Step 4: 迁移完成后必须重启 IDE/终端（让 PLATFORMIO_CORE_DIR 生效）
+   ⚠️ 未重启前不要继续编译！否则 pio 仍会写到 C 盘
+
+Step 5: 重新运行 check_environment.py 验证
+   → 确认 platformio_core_source 显示为 "PLATFORMIO_CORE_DIR"
+   → 确认 platformio_core_dir 指向新目录
+```
+
+#### 为什么默认强制迁移
+
+| 项 | 说明 |
+|----|------|
+| 实际占用 | **5-6GB**，且随编译持续增长 |
+| 目标 | 首次 `pio run` 时组件**直接下载到非系统盘**，从一开始就不占 C 盘 |
+| 无感知 | 用户只需选择目标盘（如 D 盘），其余全自动 |
+| 兼容 | 新目录设置 `PLATFORMIO_CORE_DIR` 后，`pio` 全自动识别，无额外配置 |
+
+#### 交互式迁移示例（用户实际看到的）
+
+```
+python scripts/migrate_core_dir.py
+
+检测到的磁盘：
+  C:  剩余 23.5GB
+  D:  剩余 318.2GB
+  E:  剩余 145.0GB
+
+目标目录 (例如 D:\DevTools\platformio): D:\DevTools\platformio
+
+即将把 core 目录从:
+  C:\Users\<用户>\.platformio  (大小 5.6 GB)
+复制到:
+  D:\DevTools\platformio
+
+✅ 迁移完成！
+  新 core 目录: D:\DevTools\platformio
+  ⚠️ 请关闭并重新打开 IDE / 终端，让环境变量生效。
+```
+
+#### 完整参数说明（migrate_core_dir.py）
+
+```bash
+python scripts/migrate_core_dir.py --check         # 仅检测现状
+python scripts/migrate_core_dir.py                 # 交互式选择目标盘
+python scripts/migrate_core_dir.py --target D:\Tools\pio  # 直接指定
+python scripts/migrate_core_dir.py --target D:\Tools\pio --move  # 迁移后删 C 盘原目录
+python scripts/migrate_core_dir.py --json          # JSON 输出（供 skill 解析）
+```
+1. **首次执行** `python scripts/check_environment.py`，确认 `platformio_core_source` 是 `PLATFORMIO_CORE_DIR` 而不是 `default`
+2. 重新启动 IDE/终端，让所有子进程继承新变量
+3. 首次 `pio run` 会自动在新目录下下载平台包、框架、工具链
+4. 若想清理 C 盘旧的 `~/.platformio/`，可在确认新目录工作正常后手动删除
+
+> PlatformIO 官方文档：<https://docs.platformio.org/en/latest/core/userguide/cmd_run.html#cmdoption-platformio-run-project-dir>
+
 ### 首次执行前的用户提示模板
 
 在执行任何编程任务前，如检测到环境未就绪，向用户显示：
@@ -83,6 +168,52 @@ sudo usermod -a -G dialout $USER
 ║  是否继续？请回复"确认"开始下载，或"取消"终止操作。               ║
 ╚══════════════════════════════════════════════════════════════════╝
 ```
+
+### 🧳 离线安装包方案（国内/机房/无网络首选）
+
+国内网络访问 PlatformIO Registry、dl.espressif.com、github 可能很慢甚至失败。
+**推荐在一台能联网的电脑上提前打包好离线安装包，分发到教学电脑直接解压使用。**
+
+#### 生成离线包（在【能联网】的电脑上执行一次）
+
+前提：该电脑已成功完成过一次 espressif32 编译（core 数据齐全）。
+
+```bash
+python scripts/build_offline_package.py --output ./offline_package
+# 生成: offline_package/future-tech-box-pio-<系统>-<架构>.zip （约 400-700MB）
+```
+
+**注意**：
+- 包内只保留 espressif32 相关组件（平台包+工具链+Arduino 框架+esptool）
+- **跨平台不通用**：Windows 的包只能在 Windows 用；如目标机是 macOS/Linux 需在对应系统打包
+- 打包过程会同时下载 PlatformIO CLI 的 wheel（供离线 pip 安装）
+
+#### 安装离线包（在【目标】电脑上执行）
+
+```bash
+# 方式 A：使用安装脚本（推荐，自动解压+装CLI+设环境变量）
+python scripts/install_offline_package.py <离线包.zip>
+
+# 方式 B：手动安装
+# 1. 解压 zip 到任意目录（如 D:\DevTools\platformio）
+# 2. 离线装 CLI: cd 解压目录/platformio_wheel && pip install --no-index --find-links=. platformio
+# 3. 设置环境变量 PLATFORMIO_CORE_DIR=解压目录/platformio（需重启终端）
+# 4. 验证: pio --core-dir 应输出该目录
+```
+
+#### 检测脚本对离线包的适配
+
+`check_environment.py` 通过 `get_platformio_core_dir()` 定位 core 目录：
+- 离线包解压并设置 `PLATFORMIO_CORE_DIR` 后，检测脚本会**自然判定组件就绪**（实时检测文件系统）
+- 无需修改检测逻辑；`platformio_core_source` 会显示为 `PLATFORMIO_CORE_DIR`
+
+#### 离线包放置建议
+
+| 放置位置 | 是否合适 |
+|----------|---------|
+| 项目目录本地（如 `offline_package/`） | ✅ 推荐，但注意 zip 约 500MB，勿提交到 git |
+| 网盘 / 学校共享盘 | ✅ 分发最方便 |
+| git 仓库 | ❌ 太大，建议用 .gitignore 排除 |
 
 ---
 
@@ -143,14 +274,29 @@ sudo usermod -a -G dialout $USER
 
 ---
 
+### Phase 0.5: 方案生成模式（新课标对齐，可选前置阶段）
+
+**触发条件**：用户请求是「方案/作品/项目设计」类（如"如何用未来科技盒做智能浇花系统"、"设计一个循迹小车方案"、"未来科技盒能做什么作品"），而非直接要求"写代码/烧录"。
+
+**处理**：
+1. 判断请求类型：方案设计类 → 进入本阶段；直接编程类 → 跳过，进入 Phase 1
+2. 读取 `references/new_curriculum_solution_design.md` 获取新课标参考（核心素养四维、学段定位、硬件映射、方案输出结构、方案方向库）
+3. 按该文件「四、方案输出结构」输出符合课标的完整项目方案（含核心素养目标、系统架构、硬件选型、任务驱动教学过程、评价设计）
+4. 方案末尾引导用户确认，确认后再进入 Phase 1 生成代码
+
+> 方案模式核心约束：只描述方案，不写代码；硬件选型必须以参考文档「三、硬件能力映射」为准，不得虚构硬件；学段定位与课标内容模块要匹配。
+
+---
+
 ### Phase 1: 需求理解与代码生成
 
-**输入**：用户自然语言描述  
+**输入**：用户自然语言描述（若经过 Phase 0.5，则为已确认的方案）  
 **处理**：
 1. 解析用户意图，识别涉及的硬件模块
 2. 读取 `references/pinout_mapping.csv` 获取引脚映射
 3. 读取 `references/future_tech_box_v2_hardware.md` 获取硬件约束
-4. 生成符合 PlatformIO 结构的代码
+4. 若用户在方案阶段指定了学段/课标要求，代码需与方案中的硬件选型一致
+5. 生成符合 PlatformIO 结构的代码
 
 **代码生成前向用户显示**：
 ```
@@ -421,11 +567,62 @@ python %USERPROFILE%\.platformio\packages\tool-esptoolpy\esptool.py ^
 | **I2C 颜色传感器** | ✅ | "识别颜色" |
 | **I2C 温湿度** | ✅ | "读取当前温度" |
 | **WiFi Web 遥控** | ✅ | "用电脑/手机网页控制小车" |
+| **USB 串口→网页控制（Web Serial API）** | ✅ | "USB 连电脑控制网页"、"主板当遥控器"、"按钮控制网页"、"手柄控制网页游戏" |
 | **FreeRTOS 多任务** | ✅ | "同时循迹+颜色识别+超声波避障" |
 | **蜂鸣器** | ✅ | "蜂鸣器响一声"、"播放音乐"、"提示音" |
 | **语音模块 (ASR Pro)** | 🔌 | 预刷程序，串口通讯控制，暂不需要编程 |
 
 ✅ = 已支持 &emsp; ❌ = 当前版本不支持 &emsp; 🔌 = 外部模块（无需编程）
+
+---
+
+## 🎯 新课标方案生成模式（v0.3.0 新增）
+
+### 何时触发
+当用户提出**方案/作品/项目设计**类请求时触发（而不是直接要求写代码）：
+- "如何用未来科技盒做 XX 方案/作品？"
+- "设计一个 XX 项目的实施方案"
+- "未来科技盒能做什么符合新课标的作品？"
+- "为 X 年级学生设计用未来科技盒做的 XX 作品"
+
+### 触发后的流程
+1. 读取 `references/new_curriculum_solution_design.md`
+2. 输出符合《义务教育信息科技课程标准（2022年版2025年修订）》的项目方案
+3. 方案末尾询问用户是否进入编程烧录流程
+
+### 方案输出结构（严格遵循参考文档第四节）
+```
+## 一、项目基本信息
+## 二、课标对齐（核心素养四维 + 学段目标呼应）
+## 三、项目概述（驱动问题 + 输入→计算→输出系统架构）
+## 四、特色与玩法设计（主题风格 + 地区/文化特色 + 游戏化玩法 + 趣味呈现）
+## 五、硬件选型清单
+## 六、任务驱动教学过程（情境导入→方案设计→搭建编程→测试优化→拓展迁移）
+## 七、评价设计（素养导向，教学评一体化）
+## 八、注意事项与降级方案
+## 九、非接线创客内容（结构搭建 / 沙盘场景 / 美术道具 / 功能件制作）
+## 十、下一步（引导进入编程模式）
+```
+
+### 核心约束
+1. **只出方案，不出代码**：方案阶段不写 C++/Arduino 代码，代码留到用户确认方案后（Phase 1）
+2. **硬件不虚构**：硬件选型必须来自参考文档「三、硬件能力映射」及本 SKILL 引脚表，禁止发明不存在的传感器/接口
+3. **课标对齐**：核心素养从参考文档「一、核心素养速查」取用；学段与内容模块从「二、内容模块与学段定位」取用
+4. **接口限制合规**：2.0 循迹引脚为 GPIO2/GPIO1、LED 矩阵需 scanDisplay 维持显示、ASR Pro 无需编程，方案设计不得违反
+5. **学段适配**：教师指定学段时按该学段目标定难度；未指定时默认推荐 5～6 年级或 7～9 年级并说明理由
+6. **方案方向库**：教师问"能做什么"时，先给出参考文档「八、方案方向库」清单，再引导选择其一深入设计
+7. **技术克制（第一准则）**：默认只用低难度、已验证、易采买模块（按键/LED矩阵/蜂鸣器/超声波/循迹/温湿度/加速度计/颜色/电机/舵机/PS2/WiFi）。**不主动引导 GPS/TWD 定位、云平台大屏、多机协同、复杂 AI 等高难度功能**；除非用户明确要求，否则不写进方案主体。用户要求时可补充，但必须标注采买/接线/供电风险并给替代建议
+8. **特色与风格优先**：方案侧重地区/文化特色、主题风格、游戏化玩法、趣味呈现，而非堆技术。先想"好不好玩、有没有特色"，再想"用什么硬件"
+9. **技术可落地**：严格按用户描述要求实现；涉及接线/供电不确定的器件（继电器水泵、GPS、大功率电机）标注"需教师确认接线与供电"；优先用板载模块，外接器件降到最少
+10. **非接线创客内容覆盖**：凡作品含实体形态/场景/道具，必须给出结构搭建（瓦楞纸/雪弗板/3D打印/乐高）、沙盘模型、美术道具、功能件制作等简述及安全提示
+11. **方案主次结构**：主线（基础可落地玩法 + 特色/趣味）必须完整可执行；可选进阶（用户要求才展开）不影响主线完整性
+
+### 方案 → 代码衔接
+用户确认方案后，提示：
+"已确认方案，接下来我将基于该方案生成代码并编译烧录。请确保：① 硬件已按方案接线；② USB 数据线已连接主板。"
+然后进入 **Phase 1** 正常流程。方案中的硬件选型将决定 Phase 1 的代码生成（引脚、库、模块均按方案执行）。
+
+---
 
 ### ⚠️ 语音模块 ASR Pro 说明
 
@@ -880,6 +1077,8 @@ void loop() {
 
 - **引脚映射**：`references/pinout_mapping.csv`
 - **硬件规格**：`references/future_tech_box_v2_hardware.md`
+- **新课标方案设计参考**：`references/new_curriculum_solution_design.md`（方案生成模式必读：核心素养四维、学段定位、硬件映射、方案输出结构、方案方向库）
+- **USB 串口→网页控制参考**：`references/web_serial_guide.md`（Web Serial API：主板固件模板 + 网页 HTML 模板 + 前置条件 + 排查表）
 - **环境检测**：`scripts/check_environment.py`（自动检测操作系统）
 - **烧录脚本**：`scripts/upload_with_retry.py`（带自动重试）
 - **串口识别**（根据系统自动选择）：
@@ -2109,6 +2308,78 @@ Step 5: 烧录成功后提示用户操作：
 4. **多客户端**：WebSocket 支持多个客户端同时连接，但可能产生指令冲突
 5. **内存占用**：HTML 页面使用 `PROGMEM` 存储在 Flash 中，不占用 RAM
 6. **安全性**：局域网内使用，无需额外加密；AP 模式设置了密码
+
+---
+
+## 🔌 USB 串口→网页控制方案（Web Serial API）
+
+当用户需求涉及**主板通过 USB 连电脑，网页直接控制/接收主板数据**时，使用本方案。适合场景：
+- 主板当遥控器（按键/传感器 → 控制网页效果）
+- 主板按钮直接控制网页
+- PS2 手柄 → 主板 → 串口 → 网页游戏/动画
+
+### 与 WiFi Web 遥控的区别（先判断再选方案）
+
+| 判断点 | 用 USB 串口→网页（Web Serial） | 用 WiFi Web 遥控 |
+|--------|-------------------------------|------------------|
+| 连接方式 | 主板 USB 线连电脑 | 主板开热点/连路由 |
+| 是否需要 WiFi | ❌ 不需要 | ✅ 需要 |
+| 对电脑网络影响 | 无 | AP 模式会占用/断网 |
+| 浏览器 | 仅 Chrome/Edge | 任何浏览器 |
+| 场景 | 近距离、单机、教学演示 | 远程、无线、移动控制 |
+
+> 用户说"网页控制主板"但有 USB 线连接 → 优先 Web Serial（更简单可靠）；
+> 用户说"手机远程控制""无线控制小车" → 用 WiFi Web 遥控。
+
+### 处理流程
+1. 提示用户：需要 **Chrome/Edge 浏览器**，通过 **localhost 或 HTTPS** 打开网页（file:// 可能受限）
+2. 生成主板固件代码（`Serial.println` 按行发指令）
+3. 生成网页 HTML 文件（Web Serial API，含连接/断开/收发/日志）
+4. 提示用户：本地起服务 `python -m http.server 8000`，浏览器打开 `http://localhost:8000`
+5. 编译烧录主板固件（按常规 Phase 2/3 流程）
+
+### 前置条件提醒（生成代码时必须告知用户）
+- 浏览器：Chrome / Edge（Firefox/Safari 不支持）
+- 打开方式：localhost 或 HTTPS（secure context）
+- USB 数据线（充电线无法通讯）
+- 波特率一致：固件 `Serial.begin(115200)` = 网页 `port.open({baudRate: 115200})`
+- 串口独占：关闭串口监视器等占用程序
+- **2.0 无需装驱动**（内置 USB-Serial/JTAG）；`setup()` 中 `delay() ≥ 2000ms`
+- **⚠️ 连接触发规范（强制）：串口连接必须由用户主动点击「🔌 连接串口」按钮触发，禁止自动连接**。原因：USB 烧录时串口会被烧录工具占用，自动连接会与烧录冲突、打扰未插主板的用户。所有生成的网页必须遵守此规范（加载时不自动 `requestPort()`，不自动重连）
+
+### 代码模板
+完整模板见 `references/web_serial_guide.md`（含主板固件 3 个场景 + 网页 HTML 单文件 + 排查表）。
+
+### 用户交互流程
+```
+Step 1: 确认用户意图是"USB 串口连电脑控制网页"
+       ↓
+Step 2: 生成主板固件（Serial 按行输出，如 "KEY:A" "DIST:35"）
+       ↓
+Step 3: 生成网页 HTML（Web Serial API 完整模板）
+       ↓
+Step 4: 编译烧录主板（常规流程）
+       ↓
+Step 5: 提示用户：
+       ① 用 Chrome/Edge 打开网页（建议 python -m http.server 8000 起服务）
+       ② 点击"连接串口"，选择主板的 COM 口
+       ③ 按下主板按钮/操作手柄，网页实时响应
+```
+
+### 烧录成功后的提示
+```
+🎉 烧录成功！USB 串口→网页控制已就绪！
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+操作步骤：
+0. ⚠️ 程序不会自动运行，请先重新开关主板电源（或拔插 USB）
+1. 将生成的 controller.html 放到一个文件夹
+2. 在该文件夹打开终端执行：python -m http.server 8000
+3. 用 Chrome/Edge 打开 http://localhost:8000/controller.html
+4. 点击"🔌 连接串口"，选择主板对应的 COM 口
+5. 按下主板按键或操作手柄，网页实时响应！
+（如无 Python，也可直接双击 HTML 文件，部分 Chrome 版本可用）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
 
 ---
 

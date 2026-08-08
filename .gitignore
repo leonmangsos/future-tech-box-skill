@@ -48,6 +48,9 @@ temp_images/
 # FUE CLI tool artifacts
 .fue/
 
+# Offline package build outputs
+offline_package/
+
 # Keep these
 !.codebuddy/
 !.codebuddy/**

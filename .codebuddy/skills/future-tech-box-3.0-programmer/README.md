@@ -11,7 +11,7 @@
 | LED | 9个单色LED（行列扫描） | **3×3 RGB LED（WS2812）** |
 | 语音 | ❌ | ✅ UART2 语音模块 |
 | 视觉 | ❌ | ✅ I2C2 摄像头AI板 |
-| 蜂鸣器 | GPIO26 板载 | ⚠️ 待确认 |
+| 蜂鸣器 | GPIO26 板载 | ❌ 无蜂鸣器（声音用语音模块） |
 | 编程难度 | 较复杂（需非阻塞编程） | **更简单**（RGB LED 无需扫描） |
 
 ## 文件结构
@@ -35,7 +35,14 @@ future-tech-box-3.0-programmer/
 │   └── examples/                      # 示例程序
 │       ├── followline.7z              # 循迹小车
 │       └── ps_mode.7z                 # PS2 手柄控制
-└── scripts/                           # 辅助脚本（待添加）
+└── scripts/                           # 辅助脚本
+    ├── check_environment.py           # 环境检测（PlatformIO/串口/工具链）
+    ├── detect_port_windows.py         # Windows 串口检测（CH343/ESP32-S3）
+    ├── detect_port_macos.py           # macOS 串口检测
+    ├── detect_port_linux.py           # Linux 串口检测
+    ├── upload_with_retry.py           # esptool 直调烧录（--after no_reset，防 USB 过载）
+    ├── build_offline_package.py       # 离线包构建
+    └── install_offline_package.py     # 离线包安装
 ```
 
 ## 开发进度
@@ -46,17 +53,18 @@ future-tech-box-3.0-programmer/
 - [x] SKILL.md 框架
 - [x] RGB LED 代码模板
 - [x] 库文件和示例程序归档
+- [x] 环境检测脚本（check_environment.py）
+- [x] 串口检测脚本（detect_port_windows/macos/linux.py，适配 CH343 1A86:55D3）
+- [x] 烧录脚本（upload_with_retry.py，esptool 直调 + `--after no_reset` 防 USB 过载）
 
 ### 🔧 进行中
 - [ ] 语音模块驱动
 - [ ] 视觉模块驱动
-- [ ] 蜂鸣器确认
+- [x] ✅ 蜂鸣器确认（3.0 无板载蜂鸣器）
 - [ ] 电机方向实测
 - [ ] RGB LED 实测验证
 
 ### 📋 待开始
-- [ ] 环境检测脚本适配
 - [ ] 完整示例项目
-- [ ] 烧录脚本适配
 - [ ] 多任务编程模板
 - [ ] WiFi Web 遥控适配
